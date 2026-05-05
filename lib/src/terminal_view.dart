@@ -331,6 +331,24 @@ class TerminalViewState extends State<TerminalView> {
     _customTextEditKey.currentState?.closeKeyboard();
   }
 
+  bool scrollBy(double delta) {
+    final position = _scrollableKey.currentState?.position;
+    if (position == null) {
+      return false;
+    }
+
+    final target = (position.pixels + delta).clamp(
+      0.0,
+      position.maxScrollExtent,
+    );
+    if ((target - position.pixels).abs() < 0.5) {
+      return false;
+    }
+
+    position.jumpTo(target);
+    return true;
+  }
+
   Rect get cursorRect {
     return renderTerminal.cursorOffset & renderTerminal.cellSize;
   }

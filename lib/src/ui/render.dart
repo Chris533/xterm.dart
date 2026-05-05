@@ -215,6 +215,8 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
     if (_stickToBottom) {
       _offset.correctBy(_maxScrollExtent - _scrollOffset);
     }
+
+    _notifyEditableRect();
   }
 
   /// Total height of the terminal in pixels. Includes scrollback buffer.
@@ -309,16 +311,8 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
   }
 
   void _notifyEditableRect() {
-    final cursor = localToGlobal(cursorOffset);
-
-    final rect = Rect.fromLTRB(
-      cursor.dx,
-      cursor.dy,
-      size.width,
-      cursor.dy + _painter.cellSize.height,
-    );
-
-    final caretRect = cursor & _painter.cellSize;
+    final rect = Offset.zero & size;
+    final caretRect = cursorOffset & _painter.cellSize;
 
     _onEditableRect?.call(rect, caretRect);
   }

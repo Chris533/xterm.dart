@@ -53,6 +53,9 @@ class CustomTextEdit extends StatefulWidget {
 
 class CustomTextEditState extends State<CustomTextEdit> with TextInputClient {
   TextInputConnection? _connection;
+  Rect? _editableRect;
+  Rect? _caretRect;
+  bool _geometryUpdateScheduled = false;
 
   @override
   void initState() {
@@ -117,16 +120,47 @@ class CustomTextEditState extends State<CustomTextEdit> with TextInputClient {
   }
 
   void setEditableRect(Rect rect, Rect caretRect) {
-    if (!hasInputConnection) {
+    _editableRect = rect;
+    _caretRect = caretRect;
+    _updateInputGeometry();
+  }
+
+  void _updateInputGeometry() {
+    final rect = _editableRect;
+    final caretRect = _caretRect;
+    if (!hasInputConnection || rect == null || caretRect == null) {
+      return;
+    }
+
+    final renderObject = context.findRenderObject();
+    if (renderObject is! RenderBox) {
       return;
     }
 
     _connection?.setEditableSizeAndTransform(
       rect.size,
-      Matrix4.translationValues(0, 0, 0),
+      renderObject.getTransformTo(null),
     );
 
+    _connection?.setComposingRect(caretRect);
     _connection?.setCaretRect(caretRect);
+  }
+
+  void _scheduleGeometryUpdates() {
+    if (_geometryUpdateScheduled) {
+      return;
+    }
+
+    _geometryUpdateScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _geometryUpdateScheduled = false;
+      if (!mounted || !hasInputConnection) {
+        return;
+      }
+
+      _updateInputGeometry();
+      _scheduleGeometryUpdates();
+    });
   }
 
   void _onFocusChange() {
@@ -172,10 +206,9 @@ class CustomTextEditState extends State<CustomTextEdit> with TextInputClient {
       _connection = TextInput.attach(this, config);
 
       _connection!.show();
-
-      // setEditableRect(Rect.zero, Rect.zero);
-
       _connection!.setEditingState(_initEditingState);
+      _updateInputGeometry();
+      _scheduleGeometryUpdates();
     }
   }
 

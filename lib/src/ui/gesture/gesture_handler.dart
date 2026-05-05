@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/widgets.dart';
 import 'package:xterm/src/core/mouse/button.dart';
@@ -51,11 +53,15 @@ class TerminalGestureHandler extends StatefulWidget {
 }
 
 class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
+  static const double _autoScrollEdgeInset = 24;
+
   TerminalViewState get terminalView => widget.terminalView;
 
   RenderTerminal get renderTerminal => terminalView.renderTerminal;
 
   DragStartDetails? _lastDragStartDetails;
+  Offset? _lastDragLocalPosition;
+  Timer? _selectionAutoScrollTimer;
 
   LongPressStartDetails? _lastLongPressStartDetails;
 
@@ -75,8 +81,16 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
       // onLongPressUp: onLongPressUp,
       onDragStart: onDragStart,
       onDragUpdate: onDragUpdate,
+      onDragEnd: onDragEnd,
+      onDragCancel: onDragCancel,
       onDoubleTapDown: onDoubleTapDown,
     );
+  }
+
+  @override
+  void dispose() {
+    _stopSelectionAutoScroll();
+    super.dispose();
   }
 
   bool get _shouldSendTapEvent =>
@@ -176,6 +190,8 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
 
   void onDragStart(DragStartDetails details) {
     _lastDragStartDetails = details;
+    _lastDragLocalPosition = details.localPosition;
+    _startSelectionAutoScroll();
 
     details.kind == PointerDeviceKind.mouse
         ? renderTerminal.selectCharacters(details.localPosition)
@@ -183,9 +199,67 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
   }
 
   void onDragUpdate(DragUpdateDetails details) {
+    _lastDragLocalPosition = details.localPosition;
     renderTerminal.selectCharacters(
       _lastDragStartDetails!.localPosition,
       details.localPosition,
+    );
+  }
+
+  void onDragEnd(DragEndDetails details) {
+    _stopSelectionAutoScroll();
+  }
+
+  void onDragCancel() {
+    _stopSelectionAutoScroll();
+  }
+
+  void _startSelectionAutoScroll() {
+    _selectionAutoScrollTimer ??= Timer.periodic(
+      const Duration(milliseconds: 16),
+      (_) => _tickSelectionAutoScroll(),
+    );
+  }
+
+  void _stopSelectionAutoScroll() {
+    _selectionAutoScrollTimer?.cancel();
+    _selectionAutoScrollTimer = null;
+    _lastDragLocalPosition = null;
+  }
+
+  void _tickSelectionAutoScroll() {
+    final startDetails = _lastDragStartDetails;
+    final dragPosition = _lastDragLocalPosition;
+    if (startDetails == null || dragPosition == null) {
+      return;
+    }
+
+    final viewportHeight = renderTerminal.size.height;
+    if (viewportHeight <= 0) {
+      return;
+    }
+
+    double delta = 0;
+    if (dragPosition.dy < _autoScrollEdgeInset) {
+      final overflow = (_autoScrollEdgeInset - dragPosition.dy)
+          .clamp(0.0, _autoScrollEdgeInset);
+      delta = -(overflow / _autoScrollEdgeInset) * renderTerminal.lineHeight;
+    } else if (dragPosition.dy > viewportHeight - _autoScrollEdgeInset) {
+      final overflow = (dragPosition.dy - (viewportHeight - _autoScrollEdgeInset))
+          .clamp(0.0, _autoScrollEdgeInset);
+      delta = (overflow / _autoScrollEdgeInset) * renderTerminal.lineHeight;
+    }
+
+    if (delta == 0 || !terminalView.scrollBy(delta)) {
+      return;
+    }
+
+    renderTerminal.selectCharacters(
+      startDetails.localPosition,
+      Offset(
+        dragPosition.dx,
+        dragPosition.dy.clamp(0.0, viewportHeight - 1),
+      ),
     );
   }
 }
