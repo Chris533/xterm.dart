@@ -1,7 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
+import 'package:xterm/src/core/buffer/cell_offset.dart';
 import 'package:xterm/src/core/mouse/button.dart';
 import 'package:xterm/src/core/mouse/button_state.dart';
 import 'package:xterm/src/terminal_view.dart';
@@ -65,6 +67,9 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
 
   LongPressStartDetails? _lastLongPressStartDetails;
 
+  /// Tracks the selection base offset for Shift+Click extension.
+  CellOffset? _selectionBaseOffset;
+
   @override
   Widget build(BuildContext context) {
     return TerminalGestureDetector(
@@ -74,8 +79,8 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
       onTapDown: onTapDown,
       onSecondaryTapDown: onSecondaryTapDown,
       onSecondaryTapUp: onSecondaryTapUp,
-      onTertiaryTapDown: onSecondaryTapDown,
-      onTertiaryTapUp: onSecondaryTapUp,
+      onTertiaryTapDown: onTertiaryTapDown,
+      onTertiaryTapUp: onTertiaryTapUp,
       onLongPressStart: onLongPressStart,
       onLongPressMoveUpdate: onLongPressMoveUpdate,
       // onLongPressUp: onLongPressUp,
@@ -84,6 +89,7 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
       onDragEnd: onDragEnd,
       onDragCancel: onDragCancel,
       onDoubleTapDown: onDoubleTapDown,
+      onTripleTapDown: onTripleTapDown,
     );
   }
 
@@ -140,6 +146,16 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
   }
 
   void onTapDown(TapDownDetails details) {
+    // Check for Shift+Click to extend selection.
+    if (HardwareKeyboard.instance.isShiftPressed &&
+        _selectionBaseOffset != null) {
+      renderTerminal.extendSelection(details.localPosition, _selectionBaseOffset!);
+      return;
+    }
+
+    // Record the tap position as potential selection base for Shift+Click.
+    _selectionBaseOffset = renderTerminal.getCellOffset(details.localPosition);
+
     // onTapDown is special, as it will always call the supplied callback.
     // The TerminalView depends on it to bring the terminal into focus.
     _tapDown(
@@ -167,11 +183,19 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
   }
 
   void onTertiaryTapUp(TapUpDetails details) {
-    _tapUp(widget.onTertiaryTapUp, details, TerminalMouseButton.right);
+    _tapUp(widget.onTertiaryTapUp, details, TerminalMouseButton.middle);
   }
 
   void onDoubleTapDown(TapDownDetails details) {
     renderTerminal.selectWord(details.localPosition);
+    // Update selection base for potential Shift+Click after double-click.
+    _selectionBaseOffset = renderTerminal.getCellOffset(details.localPosition);
+  }
+
+  void onTripleTapDown(TapDownDetails details) {
+    renderTerminal.selectLine(details.localPosition);
+    // Update selection base for potential Shift+Click after triple-click.
+    _selectionBaseOffset = renderTerminal.getCellOffset(details.localPosition);
   }
 
   void onLongPressStart(LongPressStartDetails details) {
@@ -192,6 +216,9 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
     _lastDragStartDetails = details;
     _lastDragLocalPosition = details.localPosition;
     _startSelectionAutoScroll();
+
+    // Record selection base for Shift+Click.
+    _selectionBaseOffset = renderTerminal.getCellOffset(details.localPosition);
 
     details.kind == PointerDeviceKind.mouse
         ? renderTerminal.selectCharacters(details.localPosition)

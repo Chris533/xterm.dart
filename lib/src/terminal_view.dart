@@ -38,6 +38,7 @@ class TerminalView extends StatefulWidget {
     this.onTapUp,
     this.onSecondaryTapDown,
     this.onSecondaryTapUp,
+    this.onTertiaryTapUp,
     this.mouseCursor = SystemMouseCursors.text,
     this.keyboardType = TextInputType.emailAddress,
     this.keyboardAppearance = Brightness.dark,
@@ -49,6 +50,7 @@ class TerminalView extends StatefulWidget {
     this.readOnly = false,
     this.hardwareKeyboardOnly = false,
     this.simulateScroll = true,
+    this.onSelectionChanged,
   });
 
   /// The underlying terminal that this widget renders.
@@ -94,6 +96,9 @@ class TerminalView extends StatefulWidget {
 
   /// Function called when the user stops holding down a secondary button.
   final void Function(TapUpDetails, CellOffset)? onSecondaryTapUp;
+
+  /// Function called when the user stops holding down a tertiary (middle) button.
+  final void Function(TapUpDetails, CellOffset)? onTertiaryTapUp;
 
   /// The mouse cursor for mouse pointers that are hovering over the terminal.
   /// [SystemMouseCursors.text] by default.
@@ -142,6 +147,10 @@ class TerminalView extends StatefulWidget {
   /// emulators. True by default.
   final bool simulateScroll;
 
+  /// Called when the selection changes. The [String?] argument is the selected
+  /// text, or null if the selection was cleared.
+  final void Function(String? selectedText)? onSelectionChanged;
+
   @override
   State<TerminalView> createState() => TerminalViewState();
 }
@@ -174,6 +183,7 @@ class TerminalViewState extends State<TerminalView> {
     _shortcutManager = ShortcutManager(
       shortcuts: widget.shortcuts ?? defaultTerminalShortcuts,
     );
+    _controller.addListener(_onControllerSelectionChanged);
     super.initState();
   }
 
@@ -186,10 +196,12 @@ class TerminalViewState extends State<TerminalView> {
       _focusNode = widget.focusNode ?? FocusNode();
     }
     if (oldWidget.controller != widget.controller) {
+      _controller.removeListener(_onControllerSelectionChanged);
       if (oldWidget.controller == null) {
         _controller.dispose();
       }
       _controller = widget.controller ?? TerminalController();
+      _controller.addListener(_onControllerSelectionChanged);
     }
     if (oldWidget.scrollController != widget.scrollController) {
       if (oldWidget.scrollController == null) {
@@ -203,6 +215,7 @@ class TerminalViewState extends State<TerminalView> {
 
   @override
   void dispose() {
+    _controller.removeListener(_onControllerSelectionChanged);
     if (widget.focusNode == null) {
       _focusNode.dispose();
     }
@@ -214,6 +227,16 @@ class TerminalViewState extends State<TerminalView> {
     }
     _shortcutManager.dispose();
     super.dispose();
+  }
+
+  void _onControllerSelectionChanged() {
+    final selection = _controller.selection;
+    if (selection != null) {
+      final text = widget.terminal.buffer.getText(selection);
+      widget.onSelectionChanged?.call(text);
+    } else {
+      widget.onSelectionChanged?.call(null);
+    }
   }
 
   @override
@@ -305,6 +328,8 @@ class TerminalViewState extends State<TerminalView> {
           widget.onSecondaryTapDown != null ? _onSecondaryTapDown : null,
       onSecondaryTapUp:
           widget.onSecondaryTapUp != null ? _onSecondaryTapUp : null,
+      onTertiaryTapUp:
+          widget.onTertiaryTapUp != null ? _onTertiaryTapUp : null,
       readOnly: widget.readOnly,
       child: child,
     );
@@ -364,6 +389,10 @@ class TerminalViewState extends State<TerminalView> {
   }
 
   void _onTapDown(_) {
+    // When Shift is held, preserve selection for Shift+Click extension.
+    if (HardwareKeyboard.instance.isShiftPressed) {
+      return;
+    }
     if (_controller.selection != null) {
       _controller.clearSelection();
     } else {
@@ -383,6 +412,11 @@ class TerminalViewState extends State<TerminalView> {
   void _onSecondaryTapUp(TapUpDetails details) {
     final offset = renderTerminal.getCellOffset(details.localPosition);
     widget.onSecondaryTapUp?.call(details, offset);
+  }
+
+  void _onTertiaryTapUp(TapUpDetails details) {
+    final offset = renderTerminal.getCellOffset(details.localPosition);
+    widget.onTertiaryTapUp?.call(details, offset);
   }
 
   bool get hasInputConnection {

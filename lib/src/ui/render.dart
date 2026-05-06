@@ -300,6 +300,31 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
     }
   }
 
+  /// Selects the entire line at the given pixel [position].
+  void selectLine(Offset position) {
+    final cellOffset = getCellOffset(position);
+    final lineStart = CellOffset(0, cellOffset.y);
+    final lineEnd = CellOffset(_terminal.viewWidth, cellOffset.y);
+    _controller.setSelection(
+      _terminal.buffer.createAnchorFromOffset(lineStart),
+      _terminal.buffer.createAnchorFromOffset(lineEnd),
+      mode: SelectionMode.line,
+    );
+  }
+
+  /// Extends the selection from [base] to the cell at pixel [to].
+  /// Used for Shift+Click selection extension.
+  void extendSelection(Offset to, CellOffset base) {
+    var toPosition = getCellOffset(to);
+    if (toPosition.isAfterOrSame(base)) {
+      toPosition = CellOffset(toPosition.x + 1, toPosition.y);
+    }
+    _controller.setSelection(
+      _terminal.buffer.createAnchorFromOffset(base),
+      _terminal.buffer.createAnchorFromOffset(toPosition),
+    );
+  }
+
   /// Send a mouse event at [offset] with [button] being currently in [buttonState].
   bool mouseEvent(
     TerminalMouseButton button,

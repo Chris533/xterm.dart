@@ -22,6 +22,7 @@ class TerminalGestureDetector extends StatefulWidget {
     this.onDragEnd,
     this.onDragCancel,
     this.onDoubleTapDown,
+    this.onTripleTapDown,
   });
 
   final Widget? child;
@@ -37,6 +38,8 @@ class TerminalGestureDetector extends StatefulWidget {
   final GestureTapUpCallback? onSecondaryTapUp;
 
   final GestureTapDownCallback? onDoubleTapDown;
+
+  final GestureTapDownCallback? onTripleTapDown;
 
   final GestureTapDownCallback? onTertiaryTapDown;
 
@@ -62,43 +65,57 @@ class TerminalGestureDetector extends StatefulWidget {
 }
 
 class _TerminalGestureDetectorState extends State<TerminalGestureDetector> {
-  Timer? _doubleTapTimer;
+  Timer? _multiTapTimer;
 
   Offset? _lastTapOffset;
 
-  // True if a second tap down of a double tap is detected. Used to discard
-  // subsequent tap up / tap hold of the same tap.
-  bool _isDoubleTap = false;
+  /// Tracks consecutive taps: 0 = idle, 1 = single tap done, 2 = double tap done.
+  int _tapCount = 0;
+
+  /// True if a multi-tap down (double or triple) is detected. Used to discard
+  /// subsequent tap up / tap hold of the same tap.
+  bool _isMultiTap = false;
 
   // The down handler is force-run on success of a single tap and optimistically
   // run before a long press success.
   void _handleTapDown(TapDownDetails details) {
     widget.onTapDown?.call(details);
 
-    if (_doubleTapTimer != null &&
+    if (_multiTapTimer != null &&
         _isWithinDoubleTapTolerance(details.globalPosition)) {
-      // If there was already a previous tap, the second down hold/tap is a
-      // double tap down.
-      widget.onDoubleTapDown?.call(details);
-
-      _doubleTapTimer!.cancel();
-      _doubleTapTimeout();
-      _isDoubleTap = true;
+      if (_tapCount == 1) {
+        // Second tap → double tap
+        widget.onDoubleTapDown?.call(details);
+        _isMultiTap = true;
+        _tapCount = 2;
+        // Keep timer running for potential triple tap
+        _multiTapTimer!.cancel();
+        _multiTapTimer = Timer(kDoubleTapTimeout, _multiTapTimeout);
+      } else if (_tapCount == 2) {
+        // Third tap → triple tap
+        widget.onTripleTapDown?.call(details);
+        _isMultiTap = true;
+        _multiTapTimer!.cancel();
+        _multiTapTimeout();
+      }
     }
   }
 
   void _handleTapUp(TapUpDetails details) {
-    if (!_isDoubleTap) {
+    if (!_isMultiTap) {
       widget.onSingleTapUp?.call(details);
       _lastTapOffset = details.globalPosition;
-      _doubleTapTimer = Timer(kDoubleTapTimeout, _doubleTapTimeout);
+      _tapCount = 1;
+      _multiTapTimer?.cancel();
+      _multiTapTimer = Timer(kDoubleTapTimeout, _multiTapTimeout);
     }
-    _isDoubleTap = false;
+    _isMultiTap = false;
   }
 
-  void _doubleTapTimeout() {
-    _doubleTapTimer = null;
+  void _multiTapTimeout() {
+    _multiTapTimer = null;
     _lastTapOffset = null;
+    _tapCount = 0;
   }
 
   bool _isWithinDoubleTapTolerance(Offset secondTapOffset) {
