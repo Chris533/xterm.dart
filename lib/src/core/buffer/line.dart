@@ -332,12 +332,37 @@ class BufferLine with IndexedItem {
     }
 
     final builder = StringBuffer();
+    // Count of unwritten interior cells seen since the last written cell. These
+    // are emitted as spaces only once a later written cell appears, so columns
+    // laid out by cursor movement (rather than literal spaces) keep their
+    // alignment, while the trailing run of unwritten cells is dropped instead of
+    // padding the line out to its full width.
+    var pendingBlanks = 0;
     for (var i = from; i < to; i++) {
       final codePoint = getCodePoint(i);
       final width = getWidth(i);
-      if (codePoint != 0 && i + width <= to) {
-        builder.writeCharCode(codePoint);
+
+      if (codePoint == 0) {
+        // The trailing half of a wide character is also an empty cell; skip it
+        // (the preceding cell carries the glyph and has width 2). Anything else
+        // is a genuinely blank cell that should reproduce as a space.
+        final isWideCharSpacer = i > from && getWidth(i - 1) == 2;
+        if (!isWideCharSpacer) {
+          pendingBlanks++;
+        }
+        continue;
       }
+
+      if (i + width > to) {
+        // Wide character straddling the end of the range; drop it.
+        continue;
+      }
+
+      for (var b = 0; b < pendingBlanks; b++) {
+        builder.writeCharCode(0x20);
+      }
+      pendingBlanks = 0;
+      builder.writeCharCode(codePoint);
     }
 
     return builder.toString();
