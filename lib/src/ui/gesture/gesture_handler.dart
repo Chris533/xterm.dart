@@ -227,10 +227,20 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
 
   void onDragUpdate(DragUpdateDetails details) {
     _lastDragLocalPosition = details.localPosition;
-    renderTerminal.selectCharacters(
-      _lastDragStartDetails!.localPosition,
-      details.localPosition,
-    );
+    // Anchor the selection to the buffer cell captured at drag start rather than
+    // re-deriving it from the start pixel every frame. The start pixel is
+    // viewport-relative, so once the view scrolls it would resolve to a
+    // different cell and the anchor would drift — breaking selections that span
+    // more than one screen.
+    final base = _selectionBaseOffset;
+    if (base != null) {
+      renderTerminal.extendSelection(details.localPosition, base);
+    } else {
+      renderTerminal.selectCharacters(
+        _lastDragStartDetails!.localPosition,
+        details.localPosition,
+      );
+    }
   }
 
   void onDragEnd(DragEndDetails details) {
@@ -255,9 +265,9 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
   }
 
   void _tickSelectionAutoScroll() {
-    final startDetails = _lastDragStartDetails;
+    final base = _selectionBaseOffset;
     final dragPosition = _lastDragLocalPosition;
-    if (startDetails == null || dragPosition == null) {
+    if (base == null || dragPosition == null) {
       return;
     }
 
@@ -281,12 +291,15 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
       return;
     }
 
-    renderTerminal.selectCharacters(
-      startDetails.localPosition,
+    // Extend from the fixed buffer-cell anchor to the current drag pixel. After
+    // scrollBy() the scroll offset has changed, so the drag pixel now resolves
+    // to the newly revealed cell while the anchor stays put.
+    renderTerminal.extendSelection(
       Offset(
         dragPosition.dx,
         dragPosition.dy.clamp(0.0, viewportHeight - 1),
       ),
+      base,
     );
   }
 }
