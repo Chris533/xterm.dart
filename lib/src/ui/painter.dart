@@ -146,19 +146,71 @@ class TerminalPainter {
   ) {
     final cellData = CellData.empty();
     final cellWidth = _cellSize.width;
+    final lineLen = line.length;
 
-    for (var i = 0; i < line.length; i++) {
+    // Pass 1: batch adjacent cells with the same background color into single
+    // drawRect calls.
+    Color? runColor;
+    double runStartX = 0;
+    double runWidth = 0;
+
+    for (var i = 0; i < lineLen; i++) {
       line.getCellData(i, cellData);
-
       final charWidth = cellData.content >> CellContent.widthShift;
-      final cellOffset = offset.translate(i * cellWidth, 0);
+      final cellWidthPx = cellWidth * (charWidth == 2 ? 2 : 1);
 
-      paintCell(canvas, cellOffset, cellData);
+      final bgColor = _resolveEffectiveBackground(cellData);
 
-      if (charWidth == 2) {
-        i++;
+      if (bgColor != null) {
+        if (bgColor == runColor) {
+          runWidth += cellWidthPx;
+        } else {
+          if (runColor != null) {
+            _flushBackgroundRun(canvas, offset, runStartX, runWidth, runColor);
+          }
+          runColor = bgColor;
+          runStartX = i * cellWidth;
+          runWidth = cellWidthPx;
+        }
+      } else if (runColor != null) {
+        _flushBackgroundRun(canvas, offset, runStartX, runWidth, runColor);
+        runColor = null;
       }
+
+      if (charWidth == 2) i++;
     }
+    if (runColor != null) {
+      _flushBackgroundRun(canvas, offset, runStartX, runWidth, runColor);
+    }
+
+    // Pass 2: foregrounds.
+    for (var i = 0; i < lineLen; i++) {
+      line.getCellData(i, cellData);
+      final charWidth = cellData.content >> CellContent.widthShift;
+      paintCellForeground(canvas, offset.translate(i * cellWidth, 0), cellData);
+      if (charWidth == 2) i++;
+    }
+  }
+
+  @pragma('vm:prefer-inline')
+  void _flushBackgroundRun(
+    Canvas canvas, Offset lineOffset, double startX, double width, Color color,
+  ) {
+    final paint = Paint()..color = color;
+    final rect = Rect.fromLTWH(
+      lineOffset.dx + startX, lineOffset.dy, width + 1, _cellSize.height,
+    );
+    canvas.drawRect(rect, paint);
+  }
+
+  @pragma('vm:prefer-inline')
+  Color? _resolveEffectiveBackground(CellData cellData) {
+    if (cellData.flags & CellFlags.inverse != 0) {
+      return resolveForegroundColor(cellData.foreground);
+    }
+    final colorType = cellData.background & CellColor.typeMask;
+    if (colorType == CellColor.normal) return null;
+    return resolveBackgroundColor(cellData.background);
   }
 
   @pragma('vm:prefer-inline')

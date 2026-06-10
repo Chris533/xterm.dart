@@ -20,8 +20,9 @@ const _cellContent = 3;
 class BufferLine with IndexedItem {
   BufferLine(
     this._length, {
-    this.isWrapped = false,
-  }) : _data = Uint32List(_calcCapacity(_length) * _cellSize);
+    bool isWrapped = false,
+  })  : _isWrapped = isWrapped,
+       _data = Uint32List(_calcCapacity(_length) * _cellSize);
 
   int _length;
 
@@ -29,7 +30,20 @@ class BufferLine with IndexedItem {
 
   Uint32List get data => _data;
 
-  var isWrapped = false;
+  int _version = 0;
+  int get version => _version;
+
+  @pragma('vm:prefer-inline')
+  void _bumpVersion() { _version++; }
+
+  bool _isWrapped;
+  bool get isWrapped => _isWrapped;
+  set isWrapped(bool value) {
+    if (value != _isWrapped) {
+      _isWrapped = value;
+      _bumpVersion();
+    }
+  }
 
   int get length => _length;
 
@@ -81,18 +95,22 @@ class BufferLine with IndexedItem {
 
   void setForeground(int index, int value) {
     _data[index * _cellSize + _cellForeground] = value;
+    _bumpVersion();
   }
 
   void setBackground(int index, int value) {
     _data[index * _cellSize + _cellBackground] = value;
+    _bumpVersion();
   }
 
   void setAttributes(int index, int value) {
     _data[index * _cellSize + _cellAttributes] = value;
+    _bumpVersion();
   }
 
   void setContent(int index, int value) {
     _data[index * _cellSize + _cellContent] = value;
+    _bumpVersion();
   }
 
   void setCodePoint(int index, int char) {
@@ -106,6 +124,7 @@ class BufferLine with IndexedItem {
     _data[offset + _cellBackground] = style.background;
     _data[offset + _cellAttributes] = style.attrs;
     _data[offset + _cellContent] = char | (witdh << CellContent.widthShift);
+    _bumpVersion();
   }
 
   void setCellData(int index, CellData cellData) {
@@ -114,6 +133,7 @@ class BufferLine with IndexedItem {
     _data[offset + _cellBackground] = cellData.background;
     _data[offset + _cellAttributes] = cellData.flags;
     _data[offset + _cellContent] = cellData.content;
+    _bumpVersion();
   }
 
   void eraseCell(int index, CursorStyle style) {
@@ -122,6 +142,7 @@ class BufferLine with IndexedItem {
     _data[offset + _cellBackground] = style.background;
     _data[offset + _cellAttributes] = style.attrs;
     _data[offset + _cellContent] = 0;
+    _bumpVersion();
   }
 
   void resetCell(int index) {
@@ -130,6 +151,7 @@ class BufferLine with IndexedItem {
     _data[offset + _cellBackground] = 0;
     _data[offset + _cellAttributes] = 0;
     _data[offset + _cellContent] = 0;
+    _bumpVersion();
   }
 
   /// Erase cells whose index satisfies [start] <= index < [end]. Erased cells
@@ -247,6 +269,7 @@ class BufferLine with IndexedItem {
     }
 
     _length = length;
+    _bumpVersion();
 
     for (var i = 0; i < _anchors.length; i++) {
       final anchor = _anchors[i];
@@ -289,18 +312,13 @@ class BufferLine with IndexedItem {
   void copyFrom(BufferLine src, int srcCol, int dstCol, int len) {
     resize(dstCol + len);
 
-    // data.setRange(
-    //   dstCol * _cellSize,
-    //   (dstCol + len) * _cellSize,
-    //   Uint32List.sublistView(src.data, srcCol * _cellSize, len * _cellSize),
-    // );
-
     var srcOffset = srcCol * _cellSize;
     var dstOffset = dstCol * _cellSize;
 
     for (var i = 0; i < len * _cellSize; i++) {
       _data[dstOffset++] = src._data[srcOffset++];
     }
+    _bumpVersion();
   }
 
   static int _calcCapacity(int length) {

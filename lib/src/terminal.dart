@@ -1,3 +1,4 @@
+import 'dart:async' show scheduleMicrotask;
 import 'dart:math' show max;
 
 import 'package:xterm/src/base/observable.dart';
@@ -86,6 +87,8 @@ class Terminal with Observable implements TerminalState, EscapeHandler {
   });
 
   late final _parser = EscapeParser(this);
+
+  bool _notifyScheduled = false;
 
   final _emitter = const EscapeEmitter();
 
@@ -226,7 +229,13 @@ class Terminal with Observable implements TerminalState, EscapeHandler {
   /// [onTitleChange] when the escape sequences in [data] request it.
   void write(String data) {
     _parser.write(data);
-    notifyListeners();
+    if (!_notifyScheduled) {
+      _notifyScheduled = true;
+      scheduleMicrotask(() {
+        _notifyScheduled = false;
+        notifyListeners();
+      });
+    }
   }
 
   /// Sends a key event to the underlying program.

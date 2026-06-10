@@ -1,3 +1,4 @@
+import 'dart:collection' show LinkedHashMap;
 import 'dart:math' show max;
 import 'dart:ui';
 
@@ -18,6 +19,12 @@ import 'package:xterm/src/ui/terminal_text_style.dart';
 import 'package:xterm/src/ui/terminal_theme.dart';
 
 typedef EditableRectCallback = void Function(Rect rect, Rect caretRect);
+
+class _CachedLinePicture {
+  _CachedLinePicture(this.version, this.picture);
+  final int version;
+  final Picture picture;
+}
 
 class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
   RenderTerminal({
@@ -56,6 +63,7 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
     if (attached) _terminal.removeListener(_onTerminalChange);
     _terminal = terminal;
     if (attached) _terminal.addListener(_onTerminalChange);
+    _clearLinePictures();
     _resizeTerminalIfNeeded();
     markNeedsLayout();
   }
@@ -95,18 +103,21 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
   set textStyle(TerminalStyle value) {
     if (value == _painter.textStyle) return;
     _painter.textStyle = value;
+    _clearLinePictures();
     markNeedsLayout();
   }
 
   set textScaler(TextScaler value) {
     if (value == _painter.textScaler) return;
     _painter.textScaler = value;
+    _clearLinePictures();
     markNeedsLayout();
   }
 
   set theme(TerminalTheme value) {
     if (value == _painter.theme) return;
     _painter.theme = value;
+    _clearLinePictures();
     markNeedsPaint();
   }
 
@@ -151,6 +162,22 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
 
   final TerminalPainter _painter;
 
+  final _linePictures = LinkedHashMap<int, _CachedLinePicture>();
+  static const _maxCachedLines = 500;
+
+  void _clearLinePictures() {
+    for (final cached in _linePictures.values) {
+      cached.picture.dispose();
+    }
+    _linePictures.clear();
+  }
+
+  void _evictExcessLinePictures() {
+    while (_linePictures.length > _maxCachedLines) {
+      _linePictures.remove(_linePictures.keys.first)!.picture.dispose();
+    }
+  }
+
   var _stickToBottom = true;
 
   void _onScroll() {
@@ -186,6 +213,7 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
 
   @override
   void detach() {
+    _clearLinePictures();
     super.detach();
     _offset.removeListener(_onScroll);
     _terminal.removeListener(_onTerminalChange);
@@ -201,6 +229,7 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
   @override
   void systemFontsDidChange() {
     _painter.clearFontCache();
+    _clearLinePictures();
     super.systemFontsDidChange();
   }
 
@@ -433,12 +462,31 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
     final effectLastLine = lastLine.clamp(0, lines.length - 1);
 
     for (var i = effectFirstLine; i <= effectLastLine; i++) {
-      _painter.paintLine(
-        canvas,
-        offset.translate(0, (i * charHeight + _lineOffset).truncateToDouble()),
-        lines[i],
-      );
+      final line = lines[i];
+      final lineY = (i * charHeight + _lineOffset).truncateToDouble();
+      final lineId = identityHashCode(line);
+      final cached = _linePictures[lineId];
+
+      if (cached != null && cached.version == line.version) {
+        canvas.save();
+        canvas.translate(offset.dx, offset.dy + lineY);
+        canvas.drawPicture(cached.picture);
+        canvas.restore();
+      } else {
+        cached?.picture.dispose();
+        final recorder = PictureRecorder();
+        final recCanvas = Canvas(recorder);
+        _painter.paintLine(recCanvas, Offset.zero, line);
+        final picture = recorder.endRecording();
+        _linePictures[lineId] = _CachedLinePicture(line.version, picture);
+
+        canvas.save();
+        canvas.translate(offset.dx, offset.dy + lineY);
+        canvas.drawPicture(picture);
+        canvas.restore();
+      }
     }
+    _evictExcessLinePictures();
 
     if (_terminal.buffer.absoluteCursorY >= effectFirstLine &&
         _terminal.buffer.absoluteCursorY <= effectLastLine) {
