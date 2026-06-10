@@ -424,7 +424,7 @@ class TerminalViewState extends State<TerminalView> {
   }
 
   void _onInsert(String text) {
-    final key = charToTerminalKey(text.trim());
+    final key = charToTerminalKey(text);
 
     // On mobile platforms there is no guarantee that virtual keyboard will
     // generate hardware key events. So we need first try to send the key
