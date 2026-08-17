@@ -74,23 +74,30 @@ class _TerminalScrollGestureHandlerState
   }
 
   void _onTerminalUpdated() {
-    if (isAltBuffer != widget.terminal.isUsingAltBuffer) {
-      isAltBuffer = widget.terminal.isUsingAltBuffer;
+    final nextIsAltBuffer = widget.terminal.isUsingAltBuffer;
+    if (isAltBuffer != nextIsAltBuffer) {
+      isAltBuffer = nextIsAltBuffer;
+      // InfiniteScrollView starts at zero each time the alternate-buffer
+      // subtree is mounted. Do not compare its new offset with the previous
+      // buffer's baseline, or the first gesture can be swallowed or inverted.
+      lastLineOffset = 0;
       setState(() {});
     }
   }
 
-  /// Send a single scroll event to the terminal. If [simulateScroll] is true,
-  /// then if the application doesn't recognize mouse wheel events, this method
-  /// will simulate scroll events by sending up/down arrow keys.
+  /// Send a single scroll event to the terminal. In the alternate buffer,
+  /// applications must explicitly opt into mouse-wheel reporting (DECSET
+  /// 1007); otherwise simulate scrolling with up/down keys when enabled.
   void _sendScrollEvent(bool up) {
     final position = widget.getCellOffset(lastPointerPosition);
+    final reportMouseScroll = widget.terminal.altBufferMouseScrollMode;
 
-    final handled = widget.terminal.mouseInput(
-      up ? TerminalMouseButton.wheelUp : TerminalMouseButton.wheelDown,
-      TerminalMouseButtonState.down,
-      position,
-    );
+    final handled = reportMouseScroll &&
+        widget.terminal.mouseInput(
+          up ? TerminalMouseButton.wheelUp : TerminalMouseButton.wheelDown,
+          TerminalMouseButtonState.down,
+          position,
+        );
 
     if (!handled && widget.simulateScroll) {
       widget.terminal.keyInput(

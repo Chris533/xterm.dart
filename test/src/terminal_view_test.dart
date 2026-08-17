@@ -448,5 +448,72 @@ void main() {
 
       expect(terminalOutput.join(), isEmpty);
     });
+
+    testWidgets('simulates arrows when mouse mode lacks alt-buffer scroll mode',
+        (tester) async {
+      final terminalOutput = <String>[];
+      final terminal = Terminal(onOutput: terminalOutput.add);
+      terminal.write('\x1b[?1049h\x1b[?1000h');
+
+      await tester.pumpWidget(MaterialApp(
+        home: TerminalView(terminal, autofocus: true, simulateScroll: true),
+      ));
+
+      await tester.drag(find.byType(TerminalView), const Offset(0, -100));
+
+      expect(terminal.altBufferMouseScrollMode, isFalse);
+      expect(terminalOutput.join(), contains('\x1B[B'));
+    });
+
+    testWidgets('reports wheel input when alt-buffer scroll mode is enabled',
+        (tester) async {
+      final terminalOutput = <String>[];
+      final terminal = Terminal(onOutput: terminalOutput.add);
+      terminal.write('\x1b[?1049h\x1b[?1000h\x1b[?1007h');
+
+      await tester.pumpWidget(MaterialApp(
+        home: TerminalView(terminal, autofocus: true, simulateScroll: true),
+      ));
+
+      await tester.drag(find.byType(TerminalView), const Offset(0, -100));
+
+      expect(terminal.altBufferMouseScrollMode, isTrue);
+      expect(terminalOutput, isNotEmpty);
+      expect(terminalOutput.join(), isNot(contains('\x1B[B')));
+    });
+
+    testWidgets('resets the alternate-buffer scroll baseline on switch',
+        (tester) async {
+      final terminalOutput = <String>[];
+      final terminal = Terminal(onOutput: terminalOutput.add);
+      terminal.write('\x1b[?1049h');
+
+      await tester.pumpWidget(MaterialApp(
+        home: TerminalView(terminal, autofocus: true, simulateScroll: true),
+      ));
+
+      final firstScroll = tester.state<ScrollableState>(
+        find.byType(Scrollable).first,
+      );
+      firstScroll.position.jumpTo(160);
+      await tester.pump();
+      expect(terminalOutput, isNotEmpty);
+      terminalOutput.clear();
+
+      terminal.write('\x1b[?1049l');
+      await tester.pump();
+      terminal.write('\x1b[?1049h');
+      await tester.pump();
+
+      final secondScroll = tester.state<ScrollableState>(
+        find.byType(Scrollable).first,
+      );
+      // The position may be restored by PageStorage. Move it far enough that
+      // the reset baseline is observable even when it resumes at 160.
+      secondScroll.position.jumpTo(200);
+      await tester.pump();
+
+      expect(terminalOutput.length, greaterThan(1));
+    });
   });
 }
