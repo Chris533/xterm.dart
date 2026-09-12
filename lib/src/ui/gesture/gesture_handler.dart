@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -74,7 +75,6 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
   Widget build(BuildContext context) {
     return TerminalGestureDetector(
       child: widget.child,
-      onTapUp: widget.onTapUp,
       onSingleTapUp: onSingleTapUp,
       onTapDown: onTapDown,
       onSecondaryTapDown: onSecondaryTapDown,
@@ -145,6 +145,20 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
     }
   }
 
+  void onSingleTapUp(TapUpDetails details) {
+    final keyboard = HardwareKeyboard.instance;
+    final modifierHeld = defaultTargetPlatform == TargetPlatform.macOS
+        ? keyboard.isMetaPressed
+        : keyboard.isControlPressed;
+
+    _tapUp(
+      widget.onTapUp ?? widget.onSingleTapUp,
+      details,
+      TerminalMouseButton.left,
+      forceCallback: modifierHeld,
+    );
+  }
+
   void onTapDown(TapDownDetails details) {
     // Check for Shift+Click to extend selection.
     if (HardwareKeyboard.instance.isShiftPressed &&
@@ -164,10 +178,6 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
       TerminalMouseButton.left,
       forceCallback: true,
     );
-  }
-
-  void onSingleTapUp(TapUpDetails details) {
-    _tapUp(widget.onSingleTapUp, details, TerminalMouseButton.left);
   }
 
   void onSecondaryTapDown(TapDownDetails details) {
