@@ -61,6 +61,19 @@ class Buffer {
   /// greater than [viewHeight].
   late final lines = IndexAwareCircularBuffer<BufferLine>(maxLines);
 
+  /// Invoked with each row whose content is discarded by scroll
+  /// displacement ([scrollUp]), scrollback-cap eviction, or a full
+  /// [clear]. The row is passed before it is dropped — [BufferLine.getText]
+  /// yields its final rendered text and [BufferLine.isWrapped] its
+  /// continuation flag. Mid-region operations (insert/delete lines,
+  /// scroll-down) and in-place erases do not fire: their destroyed rows
+  /// are typically repainted by full-screen TUIs anyway.
+  void Function(BufferLine row)? onRowEvicted;
+
+  /// Incremented by every full [clear]. Journal consumers use it to avoid
+  /// stitching evicted rows across a wipe.
+  int generation = 0;
+
   /// Total number of lines in the buffer. Always equal or greater than
   /// [viewHeight].
   int get height => lines.length;
@@ -216,6 +229,17 @@ class Buffer {
   }
 
   void scrollUp(int lines) {
+    final evict = onRowEvicted;
+    if (evict != null) {
+      // The top [lines] rows of the scroll region are overwritten in
+      // place — report them in order before their content is lost.
+      final end = absoluteMarginTop + lines;
+      for (var i = absoluteMarginTop;
+          i < end && i <= absoluteMarginBottom;
+          i++) {
+        evict(this.lines[i]);
+      }
+    }
     for (var i = absoluteMarginTop; i <= absoluteMarginBottom; i++) {
       if (i <= absoluteMarginBottom - lines) {
         this.lines[i] = this.lines[i + lines];
@@ -236,6 +260,9 @@ class Buffer {
     if (isInVerticalMargin) {
       if (_cursorY == _marginBottom) {
         if (marginTop == 0 && !isAltBuffer) {
+          // Past maxLines the circular buffer silently drops the oldest
+          // (top) row — report it before the insert evicts it.
+          if (lines.isFull) onRowEvicted?.call(lines[0]);
           lines.insert(absoluteMarginBottom + 1, _newEmptyLine());
         } else {
           scrollUp(1);
@@ -252,6 +279,7 @@ class Buffer {
       if (isAltBuffer) {
         scrollUp(1);
       } else {
+        if (lines.isFull) onRowEvicted?.call(lines[0]);
         lines.push(_newEmptyLine());
       }
     } else {
@@ -368,15 +396,34 @@ class Buffer {
       return;
     }
 
+    final evict = onRowEvicted;
+    if (evict != null) {
+      for (var i = 0; i < scrollBack; i++) {
+        evict(lines[i]);
+      }
+    }
     lines.trimStart(scrollBack);
   }
 
   /// Clears the viewport and scrollback buffer. Then fill with empty lines.
   void clear() {
+    final evict = onRowEvicted;
+    if (evict != null) {
+      // Drain content rows in order — a parked/cleared frame stays
+      // recoverable under its outgoing generation.
+      var lastContent = -1;
+      for (var i = 0; i < height; i++) {
+        if (lines[i].getText().trim().isNotEmpty) lastContent = i;
+      }
+      for (var i = 0; i <= lastContent; i++) {
+        evict(lines[i]);
+      }
+    }
     lines.clear();
     for (int i = 0; i < viewHeight; i++) {
       lines.push(_newEmptyLine());
     }
+    generation++;
   }
 
   void insertBlankChars(int count) {
@@ -435,6 +482,10 @@ class Buffer {
   }
 
   void resize(int oldWidth, int oldHeight, int newWidth, int newHeight) {
+    // A resize may drop rows (height shrink / reflow over capacity) and
+    // invalidates every wrap flag — treat it as a stream boundary so
+    // journaled rows never stitch across it.
+    if (newWidth != oldWidth || newHeight != oldHeight) generation++;
     // 1. Adjust the height.
     if (newHeight > oldHeight) {
       // Grow larger
