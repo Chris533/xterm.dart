@@ -122,10 +122,26 @@ class CustomTextEditState extends State<CustomTextEdit> with TextInputClient {
   void setEditableRect(Rect rect, Rect caretRect) {
     _editableRect = rect;
     _caretRect = caretRect;
-    _updateInputGeometry();
+    // Called from RenderTerminal.performLayout — pushing geometry here
+    // would walk ancestor transforms and read RenderBox.size mid-layout
+    // (debug assert; stale IME geometry in release). Instead, kick the
+    // self-rescheduling post-frame loop: _scheduleGeometryUpdates is a
+    // no-op while a callback is already armed, so any number of rect
+    // updates in one frame coalesce into ONE next-frame push — and a
+    // loop that died on a transiently-detached connection is revived.
+    if (hasInputConnection) {
+      _scheduleGeometryUpdates();
+    }
   }
 
+  /// Counts every attempted IME geometry push (connection-open call and
+  /// each post-frame loop tick). Test seam for the regression that
+  /// per-relayout pushes must not be scheduled from setEditableRect.
+  @visibleForTesting
+  int debugGeometryUpdateCalls = 0;
+
   void _updateInputGeometry() {
+    debugGeometryUpdateCalls++;
     final rect = _editableRect;
     final caretRect = _caretRect;
     if (!hasInputConnection || rect == null || caretRect == null) {

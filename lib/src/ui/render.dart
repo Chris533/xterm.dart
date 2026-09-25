@@ -39,6 +39,7 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
     required FocusNode focusNode,
     required TerminalCursorType cursorType,
     required bool alwaysShowCursor,
+    bool renderingEnabled = true,
     EditableRectCallback? onEditableRect,
     String? composingText,
   })  : _terminal = terminal,
@@ -49,6 +50,7 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
         _focusNode = focusNode,
         _cursorType = cursorType,
         _alwaysShowCursor = alwaysShowCursor,
+        _renderingEnabled = renderingEnabled,
         _onEditableRect = onEditableRect,
         _composingText = composingText,
         _painter = TerminalPainter(
@@ -158,6 +160,25 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
     markNeedsPaint();
   }
 
+  /// When false, output-driven invalidation from the terminal is suppressed:
+  /// no layout requests, no IME editable-rect updates, and no paint. The
+  /// terminal keeps parsing and buffering; the renderer reconciles the current
+  /// buffer state (layout + paint) on the next re-enable. Used to keep mounted
+  /// but invisible terminals (e.g. IndexedStack children) from doing UI work.
+  bool _renderingEnabled;
+  set renderingEnabled(bool value) {
+    if (value == _renderingEnabled) return;
+    _renderingEnabled = value;
+    if (value) {
+      // Reconcile with everything the terminal produced while hidden: buffer
+      // content, scroll extent and cursor/IME rect are all re-derived by
+      // performLayout.
+      _clearLinePictures();
+      markNeedsLayout();
+      _notifyEditableRect();
+    }
+  }
+
   TerminalSize? _viewportSize;
 
   final TerminalPainter _painter;
@@ -191,6 +212,7 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
   }
 
   void _onTerminalChange() {
+    if (!_renderingEnabled) return;
     markNeedsLayout();
     _notifyEditableRect();
   }
@@ -245,7 +267,9 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
       _offset.correctBy(_maxScrollExtent - _scrollOffset);
     }
 
-    _notifyEditableRect();
+    if (_renderingEnabled) {
+      _notifyEditableRect();
+    }
   }
 
   /// Total height of the terminal in pixels. Includes scrollback buffer.
@@ -442,6 +466,7 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
 
   @override
   void paint(PaintingContext context, Offset offset) {
+    if (!_renderingEnabled) return;
     _paint(context, offset);
     context.setWillChangeHint();
   }

@@ -51,6 +51,7 @@ class TerminalView extends StatefulWidget {
     this.hardwareKeyboardOnly = false,
     this.simulateScroll = true,
     this.onSelectionChanged,
+    this.renderingEnabled = true,
   });
 
   /// The underlying terminal that this widget renders.
@@ -150,6 +151,13 @@ class TerminalView extends StatefulWidget {
   /// Called when the selection changes. The [String?] argument is the selected
   /// text, or null if the selection was cleared.
   final void Function(String? selectedText)? onSelectionChanged;
+
+  /// When false, output-driven invalidation of the render object is
+  /// suppressed: no layout requests, no IME editable-rect updates, and no
+  /// painting. The terminal keeps parsing and buffering output; the renderer
+  /// reconciles the current buffer state on the next re-enable. Used to keep
+  /// mounted but invisible terminals from doing UI work. [true] by default.
+  final bool renderingEnabled;
 
   @override
   State<TerminalView> createState() => TerminalViewState();
@@ -260,6 +268,7 @@ class TerminalViewState extends State<TerminalView> {
           alwaysShowCursor: widget.alwaysShowCursor,
           onEditableRect: _onEditableRect,
           composingText: _composingText,
+          renderingEnabled: widget.renderingEnabled,
         );
       },
     );
@@ -518,6 +527,7 @@ class _TerminalView extends LeafRenderObjectWidget {
     required this.alwaysShowCursor,
     this.onEditableRect,
     this.composingText,
+    this.renderingEnabled = true,
   });
 
   final Terminal terminal;
@@ -546,6 +556,8 @@ class _TerminalView extends LeafRenderObjectWidget {
 
   final String? composingText;
 
+  final bool renderingEnabled;
+
   @override
   RenderTerminal createRenderObject(BuildContext context) {
     return RenderTerminal(
@@ -560,6 +572,7 @@ class _TerminalView extends LeafRenderObjectWidget {
       focusNode: focusNode,
       cursorType: cursorType,
       alwaysShowCursor: alwaysShowCursor,
+      renderingEnabled: renderingEnabled,
       onEditableRect: onEditableRect,
       composingText: composingText,
     );
@@ -580,6 +593,7 @@ class _TerminalView extends LeafRenderObjectWidget {
       ..cursorType = cursorType
       ..alwaysShowCursor = alwaysShowCursor
       ..onEditableRect = onEditableRect
-      ..composingText = composingText;
+      ..composingText = composingText
+      ..renderingEnabled = renderingEnabled;
   }
 }
