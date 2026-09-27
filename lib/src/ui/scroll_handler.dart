@@ -85,12 +85,14 @@ class _TerminalScrollGestureHandlerState
     }
   }
 
-  /// Send a single scroll event to the terminal. In the alternate buffer,
-  /// applications must explicitly opt into mouse-wheel reporting (DECSET
-  /// 1007); otherwise simulate scrolling with up/down keys when enabled.
+  /// Send a single scroll event to the terminal. Mouse reporting takes
+  /// precedence over alternate-scroll mode: full-screen applications may
+  /// explicitly disable DECSET 1007 while requesting wheel events through
+  /// mouse tracking (1000/1002/1003). Fall back to up/down keys only when
+  /// the application does not accept a mouse-wheel report.
   void _sendScrollEvent(bool up) {
     final position = widget.getCellOffset(lastPointerPosition);
-    final reportMouseScroll = widget.terminal.altBufferMouseScrollMode;
+    final reportMouseScroll = widget.terminal.mouseMode.reportScroll;
 
     final handled = reportMouseScroll &&
         widget.terminal.mouseInput(
@@ -126,10 +128,10 @@ class _TerminalScrollGestureHandlerState
 
     return Listener(
       onPointerSignal: (event) {
-        lastPointerPosition = event.position;
+        lastPointerPosition = event.localPosition;
       },
       onPointerDown: (event) {
-        lastPointerPosition = event.position;
+        lastPointerPosition = event.localPosition;
       },
       child: InfiniteScrollView(
         onScroll: _onScroll,
