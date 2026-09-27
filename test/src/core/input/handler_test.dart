@@ -38,6 +38,89 @@ void main() {
         '\x1b[1;3A',
       ]);
     });
+
+    test('distinguishes Alt from Ctrl on horizontal arrows', () {
+      final output = <String>[];
+      final terminal = Terminal(
+        platform: TerminalTargetPlatform.windows,
+        onOutput: output.add,
+      );
+
+      terminal.keyInput(TerminalKey.arrowLeft, alt: true);
+      terminal.keyInput(TerminalKey.arrowRight, alt: true);
+      terminal.keyInput(TerminalKey.arrowLeft, ctrl: true);
+      terminal.keyInput(TerminalKey.arrowRight, ctrl: true);
+
+      expect(output, [
+        '\x1b[1;3D',
+        '\x1b[1;3C',
+        '\x1b[1;5D',
+        '\x1b[1;5C',
+      ]);
+    });
+
+    test('keeps the macOS Alt+arrow word-navigation convention', () {
+      final output = <String>[];
+      final terminal = Terminal(
+        platform: TerminalTargetPlatform.macos,
+        onOutput: output.add,
+      );
+
+      terminal.keyInput(TerminalKey.arrowLeft, alt: true);
+      terminal.keyInput(TerminalKey.arrowRight, alt: true);
+
+      expect(output, ['\x1bb', '\x1bf']);
+    });
+
+    test('uses cursor-key mode independently of application keypad mode', () {
+      final output = <String>[];
+      final terminal = Terminal(onOutput: output.add);
+
+      terminal.keyInput(TerminalKey.arrowUp);
+      terminal.write('\x1b[?1h');
+      terminal.keyInput(TerminalKey.arrowUp);
+      terminal.keyInput(TerminalKey.home);
+      terminal.write('\x1b[?1l\x1b=');
+      terminal.keyInput(TerminalKey.arrowUp);
+      terminal.keyInput(TerminalKey.home);
+
+      expect(output, ['\x1b[A', '\x1bOA', '\x1bOH', '\x1b[A', '\x1b[H']);
+    });
+
+    test('encodes modified F1-F4 as CSI function keys', () {
+      final output = <String>[];
+      final terminal = Terminal(onOutput: output.add);
+
+      terminal.keyInput(TerminalKey.f1);
+      terminal.keyInput(TerminalKey.f1, alt: true);
+      terminal.keyInput(TerminalKey.f2, ctrl: true);
+      terminal.keyInput(TerminalKey.f3, shift: true);
+      terminal.keyInput(TerminalKey.f4, ctrl: true, alt: true);
+      terminal.keyInput(TerminalKey.f5, alt: true);
+
+      expect(output, [
+        '\x1bOP',
+        '\x1b[1;3P',
+        '\x1b[1;5Q',
+        '\x1b[1;2R',
+        '\x1b[1;7S',
+        '\x1b[15;3~',
+      ]);
+    });
+
+    test('encodes Alt+letters with their unshifted or shifted case', () {
+      final output = <String>[];
+      final terminal = Terminal(
+        platform: TerminalTargetPlatform.windows,
+        onOutput: output.add,
+      );
+
+      terminal.keyInput(TerminalKey.keyA, alt: true);
+      terminal.keyInput(TerminalKey.keyZ, alt: true);
+      terminal.keyInput(TerminalKey.keyA, alt: true, shift: true);
+
+      expect(output, ['\x1ba', '\x1bz', '\x1bA']);
+    });
   });
 
   group('KeytabInputHandler', () {

@@ -116,7 +116,7 @@ class KeytabInputHandler implements TerminalInputHandler {
       alt: event.alt,
       shift: event.shift,
       newLineMode: event.state.lineFeedMode,
-      appCursorKeys: event.state.appKeypadMode,
+      appCursorKeys: event.state.cursorKeysMode,
       appKeyPad: event.state.appKeypadMode,
       appScreen: event.altBuffer,
       macos: event.platform == TerminalTargetPlatform.macos,
@@ -188,7 +188,7 @@ class AltInputHandler implements TerminalInputHandler {
 
   @override
   String? call(TerminalKeyboardEvent event) {
-    if (!event.alt || event.ctrl || event.shift) {
+    if (!event.alt || event.ctrl) {
       return null;
     }
 
@@ -200,7 +200,8 @@ class AltInputHandler implements TerminalInputHandler {
 
     if (key.index >= TerminalKey.keyA.index &&
         key.index <= TerminalKey.keyZ.index) {
-      final charCode = key.index - TerminalKey.keyA.index + 65;
+      final charCode =
+          key.index - TerminalKey.keyA.index + (event.shift ? 65 : 97);
       final input = [0x1b, charCode];
       return String.fromCharCodes(input);
     }
