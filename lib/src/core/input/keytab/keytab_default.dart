@@ -72,8 +72,8 @@ key Down  -Shift-AnyMod+Ansi-AppCuKeys : "\E[B"
 key Right -Shift-AnyMod+Ansi-AppCuKeys : "\E[C"
 key Left  -Shift-AnyMod+Ansi-AppCuKeys : "\E[D"
 
-key Up    -Shift+AnyMod+Ansi           : "\E[1;5A"
-key Down  -Shift+AnyMod+Ansi           : "\E[1;5B"
+key Up    -Shift+AnyMod+Ansi           : "\E[1;*A"
+key Down  -Shift+AnyMod+Ansi           : "\E[1;*B"
 
 # Right / Left with Control
 key Right -Shift-Alt+Control+Ansi      : "\E[1;5C"
