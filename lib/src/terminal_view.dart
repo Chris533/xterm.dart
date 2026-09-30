@@ -141,11 +141,10 @@ class TerminalView extends StatefulWidget {
   /// also prevent any on-screen keyboard to be shown.
   final bool hardwareKeyboardOnly;
 
-  /// If true, when the terminal is in alternate buffer (for example running
-  /// vim, man, etc), if the application does not declare that it can handle
-  /// scrolling, the terminal will simulate scrolling by sending up/down arrow
-  /// keys to the application. This is standard behavior for most terminal
-  /// emulators. True by default.
+  /// Allows Up/Down arrow simulation in the alternate buffer when the
+  /// application enables alternate-scroll mode (DECSET 1007) and does not
+  /// request mouse-wheel reports. True by default; this permission does not
+  /// override the application's terminal modes.
   final bool simulateScroll;
 
   /// Called when the selection changes. The [String?] argument is the selected

@@ -24,9 +24,8 @@ class TerminalScrollGestureHandler extends StatefulWidget {
   /// Returns the pixel height of lines in the terminal.
   final double Function() getLineHeight;
 
-  /// Whether to simulate scroll events in the terminal when the application
-  /// doesn't declare it supports mouse wheel events. true by default as it
-  /// is the default behavior of most terminals.
+  /// Whether to allow arrow simulation when the application enables
+  /// alternate-scroll mode (DECSET 1007) without requesting mouse reports.
   final bool simulateScroll;
 
   final Widget child;
@@ -88,20 +87,24 @@ class _TerminalScrollGestureHandlerState
   /// Send a single scroll event to the terminal. Mouse reporting takes
   /// precedence over alternate-scroll mode: full-screen applications may
   /// explicitly disable DECSET 1007 while requesting wheel events through
-  /// mouse tracking (1000/1002/1003). Fall back to up/down keys only when
-  /// the application does not accept a mouse-wheel report.
+  /// mouse tracking (1000/1002/1003). Emit up/down keys only when mouse
+  /// reporting is not requested and DECSET 1007 is enabled.
   void _sendScrollEvent(bool up) {
     final position = widget.getCellOffset(lastPointerPosition);
     final reportMouseScroll = widget.terminal.mouseMode.reportScroll;
 
-    final handled = reportMouseScroll &&
-        widget.terminal.mouseInput(
-          up ? TerminalMouseButton.wheelUp : TerminalMouseButton.wheelDown,
-          TerminalMouseButtonState.down,
-          position,
-        );
+    if (reportMouseScroll) {
+      widget.terminal.mouseInput(
+        up ? TerminalMouseButton.wheelUp : TerminalMouseButton.wheelDown,
+        TerminalMouseButtonState.down,
+        position,
+      );
+      // A wheel report is not a keyboard event. Even if a custom handler
+      // rejects it, do not mutate the application's input history with arrows.
+      return;
+    }
 
-    if (!handled && widget.simulateScroll) {
+    if (widget.simulateScroll && widget.terminal.altBufferMouseScrollMode) {
       widget.terminal.keyInput(
         up ? TerminalKey.arrowUp : TerminalKey.arrowDown,
       );
