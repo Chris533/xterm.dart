@@ -339,6 +339,7 @@ class TerminalViewState extends State<TerminalView> {
       onTertiaryTapUp:
           widget.onTertiaryTapUp != null ? _onTertiaryTapUp : null,
       readOnly: widget.readOnly,
+      enabled: widget.renderingEnabled,
       child: child,
     );
 

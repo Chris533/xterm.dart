@@ -10,6 +10,7 @@ class TerminalGestureDetector extends StatefulWidget {
     this.onSingleTapUp,
     this.onTapUp,
     this.onTapDown,
+    this.onTapCancel,
     this.onSecondaryTapDown,
     this.onSecondaryTapUp,
     this.onTertiaryTapDown,
@@ -32,6 +33,7 @@ class TerminalGestureDetector extends StatefulWidget {
   final GestureTapUpCallback? onSingleTapUp;
 
   final GestureTapDownCallback? onTapDown;
+  final GestureTapCancelCallback? onTapCancel;
 
   final GestureTapDownCallback? onSecondaryTapDown;
 
@@ -137,6 +139,7 @@ class _TerminalGestureDetectorState extends State<TerminalGestureDetector> {
       (TapGestureRecognizer instance) {
         instance
           ..onTapDown = _handleTapDown
+          ..onTapCancel = widget.onTapCancel
           ..onTapUp = _handleTapUp
           ..onSecondaryTapDown = widget.onSecondaryTapDown
           ..onSecondaryTapUp = widget.onSecondaryTapUp
@@ -183,5 +186,11 @@ class _TerminalGestureDetectorState extends State<TerminalGestureDetector> {
       excludeFromSemantics: true,
       child: widget.child,
     );
+  }
+
+  @override
+  void dispose() {
+    _multiTapTimer?.cancel();
+    super.dispose();
   }
 }

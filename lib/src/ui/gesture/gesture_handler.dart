@@ -5,6 +5,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 import 'package:xterm/src/core/buffer/cell_offset.dart';
+import 'package:xterm/src/core/buffer/line.dart';
 import 'package:xterm/src/core/mouse/button.dart';
 import 'package:xterm/src/core/mouse/button_state.dart';
 import 'package:xterm/src/terminal_view.dart';
@@ -27,6 +28,7 @@ class TerminalGestureHandler extends StatefulWidget {
     this.onTertiaryTapDown,
     this.onTertiaryTapUp,
     this.readOnly = false,
+    this.enabled = true,
   });
 
   final TerminalViewState terminalView;
@@ -50,6 +52,7 @@ class TerminalGestureHandler extends StatefulWidget {
   final GestureTapUpCallback? onTertiaryTapUp;
 
   final bool readOnly;
+  final bool enabled;
 
   @override
   State<TerminalGestureHandler> createState() => _TerminalGestureHandlerState();
@@ -62,14 +65,66 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
 
   RenderTerminal get renderTerminal => terminalView.renderTerminal;
 
-  DragStartDetails? _lastDragStartDetails;
   Offset? _lastDragLocalPosition;
   Timer? _selectionAutoScrollTimer;
 
   LongPressStartDetails? _lastLongPressStartDetails;
 
-  /// Tracks the selection base offset for Shift+Click extension.
-  CellOffset? _selectionBaseOffset;
+  // Independently owned anchors survive scrollback eviction/reflow. Never
+  // retain anchors owned by TerminalController: setSelection disposes those.
+  CellAnchor? _selectionBase;
+  CellAnchor? _selectionEnd;
+  Object? _originBuffer;
+  TapDownDetails? _pendingLeftTap;
+  bool _hostLeftGesture = false;
+
+  void _setOrigin(CellOffset begin, [CellOffset? end]) {
+    _clearOrigin();
+    final buffer = terminalView.widget.terminal.buffer;
+    _originBuffer = buffer;
+    _selectionBase = buffer.createAnchorFromOffset(begin);
+    if (end != null) _selectionEnd = buffer.createAnchorFromOffset(end);
+  }
+
+  void _clearOrigin() {
+    _selectionBase?.dispose();
+    _selectionEnd?.dispose();
+    _selectionBase = null;
+    _selectionEnd = null;
+    _originBuffer = null;
+  }
+
+  CellOffset? get _base {
+    if (_originBuffer != terminalView.widget.terminal.buffer ||
+        _selectionBase?.attached != true ||
+        (_selectionEnd != null && !_selectionEnd!.attached)) {
+      if (_originBuffer != null) widget.terminalController.clearSelection();
+      _clearOrigin();
+      return null;
+    }
+    return _selectionBase!.offset;
+  }
+
+  void _extend(Offset position) {
+    final base = _base;
+    if (base == null) {
+      _stopSelectionAutoScroll();
+      return;
+    }
+    renderTerminal.extendSelection(position, base,
+        originEnd: _selectionEnd?.offset);
+  }
+
+  @override
+  void didUpdateWidget(TerminalGestureHandler oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!widget.enabled ||
+        oldWidget.readOnly != widget.readOnly ||
+        oldWidget.terminalController != widget.terminalController) {
+      onDragCancel();
+      _clearOrigin();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -77,6 +132,7 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
       child: widget.child,
       onSingleTapUp: onSingleTapUp,
       onTapDown: onTapDown,
+      onTapCancel: onTapCancel,
       onSecondaryTapDown: onSecondaryTapDown,
       onSecondaryTapUp: onSecondaryTapUp,
       onTertiaryTapDown: onTertiaryTapDown,
@@ -96,10 +152,12 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
   @override
   void dispose() {
     _stopSelectionAutoScroll();
+    _clearOrigin();
     super.dispose();
   }
 
   bool get _shouldSendTapEvent =>
+      widget.enabled &&
       !widget.readOnly &&
       widget.terminalController.shouldSendPointerInput(PointerInput.tap);
 
@@ -146,6 +204,17 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
   }
 
   void onSingleTapUp(TapUpDetails details) {
+    if (!widget.enabled || _hostLeftGesture) {
+      _pendingLeftTap = null;
+      _hostLeftGesture = false;
+      return;
+    }
+    // Report only a resolved click. A held pointer that becomes a host drag
+    // must never leak an unmatched mouse press into the application.
+    final down = _pendingLeftTap;
+    _pendingLeftTap = null;
+    if (down == null) return;
+    _tapDown(null, down, TerminalMouseButton.left);
     final keyboard = HardwareKeyboard.instance;
     final modifierHeld = defaultTargetPlatform == TargetPlatform.macOS
         ? keyboard.isMetaPressed
@@ -160,24 +229,25 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
   }
 
   void onTapDown(TapDownDetails details) {
+    if (!widget.enabled) return;
+    _pendingLeftTap = details;
+    _hostLeftGesture = HardwareKeyboard.instance.isShiftPressed;
     // Check for Shift+Click to extend selection.
-    if (HardwareKeyboard.instance.isShiftPressed &&
-        _selectionBaseOffset != null) {
-      renderTerminal.extendSelection(details.localPosition, _selectionBaseOffset!);
+    if (HardwareKeyboard.instance.isShiftPressed && _base != null) {
+      _extend(details.localPosition);
       return;
     }
 
     // Record the tap position as potential selection base for Shift+Click.
-    _selectionBaseOffset = renderTerminal.getCellOffset(details.localPosition);
+    _setOrigin(renderTerminal.getSelectionCellOffset(details.localPosition));
 
     // onTapDown is special, as it will always call the supplied callback.
     // The TerminalView depends on it to bring the terminal into focus.
-    _tapDown(
-      widget.onTapDown,
-      details,
-      TerminalMouseButton.left,
-      forceCallback: true,
-    );
+    widget.onTapDown?.call(details);
+  }
+
+  void onTapCancel() {
+    _pendingLeftTap = null;
   }
 
   void onSecondaryTapDown(TapDownDetails details) {
@@ -197,23 +267,33 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
   }
 
   void onDoubleTapDown(TapDownDetails details) {
+    if (!widget.enabled) return;
+    _hostLeftGesture = true;
+    _pendingLeftTap = null;
     renderTerminal.selectWord(details.localPosition);
     // Update selection base for potential Shift+Click after double-click.
-    _selectionBaseOffset = renderTerminal.getCellOffset(details.localPosition);
+    final selection = widget.terminalController.selection?.normalized;
+    if (selection != null) _setOrigin(selection.begin, selection.end);
   }
 
   void onTripleTapDown(TapDownDetails details) {
+    if (!widget.enabled) return;
+    _hostLeftGesture = true;
+    _pendingLeftTap = null;
     renderTerminal.selectLine(details.localPosition);
     // Update selection base for potential Shift+Click after triple-click.
-    _selectionBaseOffset = renderTerminal.getCellOffset(details.localPosition);
+    final selection = widget.terminalController.selection?.normalized;
+    if (selection != null) _setOrigin(selection.begin, selection.end);
   }
 
   void onLongPressStart(LongPressStartDetails details) {
+    if (!widget.enabled) return;
     _lastLongPressStartDetails = details;
     renderTerminal.selectWord(details.localPosition);
   }
 
   void onLongPressMoveUpdate(LongPressMoveUpdateDetails details) {
+    if (!widget.enabled || _lastLongPressStartDetails == null) return;
     renderTerminal.selectWord(
       _lastLongPressStartDetails!.localPosition,
       details.localPosition,
@@ -223,42 +303,54 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
   // void onLongPressUp() {}
 
   void onDragStart(DragStartDetails details) {
-    _lastDragStartDetails = details;
+    if (!widget.enabled) return;
+    _pendingLeftTap = null;
+    _hostLeftGesture = true;
     _lastDragLocalPosition = details.localPosition;
-    _startSelectionAutoScroll();
 
     // Record selection base for Shift+Click.
-    _selectionBaseOffset = renderTerminal.getCellOffset(details.localPosition);
+    _setOrigin(renderTerminal.getSelectionCellOffset(details.localPosition));
 
     details.kind == PointerDeviceKind.mouse
         ? renderTerminal.selectCharacters(details.localPosition)
         : renderTerminal.selectWord(details.localPosition);
+    _updateSelectionAutoScroll();
   }
 
   void onDragUpdate(DragUpdateDetails details) {
+    if (!widget.enabled || _lastDragLocalPosition == null) return;
     _lastDragLocalPosition = details.localPosition;
     // Anchor the selection to the buffer cell captured at drag start rather than
     // re-deriving it from the start pixel every frame. The start pixel is
     // viewport-relative, so once the view scrolls it would resolve to a
     // different cell and the anchor would drift — breaking selections that span
     // more than one screen.
-    final base = _selectionBaseOffset;
-    if (base != null) {
-      renderTerminal.extendSelection(details.localPosition, base);
-    } else {
-      renderTerminal.selectCharacters(
-        _lastDragStartDetails!.localPosition,
-        details.localPosition,
-      );
-    }
+    _extend(details.localPosition);
+    _updateSelectionAutoScroll();
   }
 
   void onDragEnd(DragEndDetails details) {
     _stopSelectionAutoScroll();
+    _hostLeftGesture = false;
   }
 
   void onDragCancel() {
     _stopSelectionAutoScroll();
+    _pendingLeftTap = null;
+    _hostLeftGesture = false;
+  }
+
+  void _updateSelectionAutoScroll() {
+    final position = _lastDragLocalPosition;
+    if (position == null) return;
+    final height = renderTerminal.size.height;
+    if (position.dy < _autoScrollEdgeInset ||
+        position.dy > height - _autoScrollEdgeInset) {
+      _startSelectionAutoScroll();
+    } else {
+      _selectionAutoScrollTimer?.cancel();
+      _selectionAutoScrollTimer = null;
+    }
   }
 
   void _startSelectionAutoScroll() {
@@ -275,9 +367,14 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
   }
 
   void _tickSelectionAutoScroll() {
-    final base = _selectionBaseOffset;
+    if (!widget.enabled) {
+      _stopSelectionAutoScroll();
+      return;
+    }
+    final base = _base;
     final dragPosition = _lastDragLocalPosition;
     if (base == null || dragPosition == null) {
+      _stopSelectionAutoScroll();
       return;
     }
 
@@ -292,8 +389,9 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
           .clamp(0.0, _autoScrollEdgeInset);
       delta = -(overflow / _autoScrollEdgeInset) * renderTerminal.lineHeight;
     } else if (dragPosition.dy > viewportHeight - _autoScrollEdgeInset) {
-      final overflow = (dragPosition.dy - (viewportHeight - _autoScrollEdgeInset))
-          .clamp(0.0, _autoScrollEdgeInset);
+      final overflow =
+          (dragPosition.dy - (viewportHeight - _autoScrollEdgeInset))
+              .clamp(0.0, _autoScrollEdgeInset);
       delta = (overflow / _autoScrollEdgeInset) * renderTerminal.lineHeight;
     }
 
@@ -304,12 +402,11 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
     // Extend from the fixed buffer-cell anchor to the current drag pixel. After
     // scrollBy() the scroll offset has changed, so the drag pixel now resolves
     // to the newly revealed cell while the anchor stays put.
-    renderTerminal.extendSelection(
+    _extend(
       Offset(
         dragPosition.dx,
         dragPosition.dy.clamp(0.0, viewportHeight - 1),
       ),
-      base,
     );
   }
 }

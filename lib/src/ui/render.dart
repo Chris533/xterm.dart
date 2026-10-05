@@ -308,6 +308,20 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
     );
   }
 
+  /// Selection endpoints snap to the leading cell of a wide character.
+  CellOffset getSelectionCellOffset(Offset position) {
+    final cell = getCellOffset(position);
+    final line = _terminal.buffer.lines[cell.y];
+    return cell.x > 0 && line.getWidth(cell.x - 1) == 2
+        ? CellOffset(cell.x - 1, cell.y)
+        : cell;
+  }
+
+  CellOffset _afterSelectionCell(CellOffset cell) {
+    final width = _terminal.buffer.lines[cell.y].getWidth(cell.x);
+    return CellOffset(cell.x + (width == 2 ? 2 : 1), cell.y);
+  }
+
   /// Selects entire words in the terminal that contains [from] and [to].
   void selectWord(Offset from, [Offset? to]) {
     final fromOffset = getCellOffset(from);
@@ -335,20 +349,20 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
   /// Selects characters in the terminal that starts from [from] to [to]. At
   /// least one cell is selected even if [from] and [to] are same.
   void selectCharacters(Offset from, [Offset? to]) {
-    final fromPosition = getCellOffset(from);
+    final fromPosition = getSelectionCellOffset(from);
     if (to == null) {
       _controller.setSelection(
         _terminal.buffer.createAnchorFromOffset(fromPosition),
         _terminal.buffer.createAnchorFromOffset(fromPosition),
       );
     } else {
-      var toPosition = getCellOffset(to);
-      if (toPosition.x >= fromPosition.x) {
-        toPosition = CellOffset(toPosition.x + 1, toPosition.y);
-      }
+      final toPosition = getSelectionCellOffset(to);
+      final forward = toPosition.isAfterOrSame(fromPosition);
       _controller.setSelection(
-        _terminal.buffer.createAnchorFromOffset(fromPosition),
-        _terminal.buffer.createAnchorFromOffset(toPosition),
+        _terminal.buffer.createAnchorFromOffset(
+            forward ? fromPosition : _afterSelectionCell(fromPosition)),
+        _terminal.buffer.createAnchorFromOffset(
+            forward ? _afterSelectionCell(toPosition) : toPosition),
       );
     }
   }
@@ -367,13 +381,21 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
 
   /// Extends the selection from [base] to the cell at pixel [to].
   /// Used for Shift+Click selection extension.
-  void extendSelection(Offset to, CellOffset base) {
-    var toPosition = getCellOffset(to);
+  void extendSelection(Offset to, CellOffset base, {CellOffset? originEnd}) {
+    var toPosition = getSelectionCellOffset(to);
+    var fromPosition = base;
     if (toPosition.isAfterOrSame(base)) {
-      toPosition = CellOffset(toPosition.x + 1, toPosition.y);
+      toPosition = _afterSelectionCell(toPosition);
+      if (originEnd != null && originEnd.isAfter(toPosition)) {
+        toPosition = originEnd;
+      }
+    } else {
+      // Ranges have an exclusive end: reverse dragging includes the origin
+      // cell just as forward dragging includes the target cell.
+      fromPosition = originEnd ?? _afterSelectionCell(base);
     }
     _controller.setSelection(
-      _terminal.buffer.createAnchorFromOffset(base),
+      _terminal.buffer.createAnchorFromOffset(fromPosition),
       _terminal.buffer.createAnchorFromOffset(toPosition),
     );
   }
