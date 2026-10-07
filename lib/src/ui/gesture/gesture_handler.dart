@@ -77,6 +77,11 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
   Object? _originBuffer;
   TapDownDetails? _pendingLeftTap;
   bool _hostLeftGesture = false;
+  bool _previewTap = false;
+
+  bool get _previewModifierHeld => defaultTargetPlatform == TargetPlatform.macOS
+      ? HardwareKeyboard.instance.isMetaPressed
+      : HardwareKeyboard.instance.isControlPressed;
 
   void _setOrigin(CellOffset begin, [CellOffset? end]) {
     _clearOrigin();
@@ -133,6 +138,7 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
       onSingleTapUp: onSingleTapUp,
       onTapDown: onTapDown,
       onTapCancel: onTapCancel,
+      isExclusiveTap: () => _previewModifierHeld,
       onSecondaryTapDown: onSecondaryTapDown,
       onSecondaryTapUp: onSecondaryTapUp,
       onTertiaryTapDown: onTertiaryTapDown,
@@ -214,24 +220,31 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
     final down = _pendingLeftTap;
     _pendingLeftTap = null;
     if (down == null) return;
+    if (_previewTap) {
+      _previewTap = false;
+      // Host preview owns the resolved tap; do not also mutate a mouse TUI.
+      if (_previewModifierHeld) {
+        (widget.onTapUp ?? widget.onSingleTapUp)?.call(details);
+      }
+      return;
+    }
     _tapDown(null, down, TerminalMouseButton.left);
-    final keyboard = HardwareKeyboard.instance;
-    final modifierHeld = defaultTargetPlatform == TargetPlatform.macOS
-        ? keyboard.isMetaPressed
-        : keyboard.isControlPressed;
-
     _tapUp(
       widget.onTapUp ?? widget.onSingleTapUp,
       details,
       TerminalMouseButton.left,
-      forceCallback: modifierHeld,
     );
   }
 
   void onTapDown(TapDownDetails details) {
     if (!widget.enabled) return;
     _pendingLeftTap = details;
-    _hostLeftGesture = HardwareKeyboard.instance.isShiftPressed;
+    _previewTap = _previewModifierHeld;
+    _hostLeftGesture = !_previewTap && HardwareKeyboard.instance.isShiftPressed;
+    if (_previewTap) {
+      widget.onTapDown?.call(details);
+      return;
+    }
     // Check for Shift+Click to extend selection.
     if (HardwareKeyboard.instance.isShiftPressed && _base != null) {
       _extend(details.localPosition);

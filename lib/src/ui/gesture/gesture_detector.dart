@@ -11,6 +11,7 @@ class TerminalGestureDetector extends StatefulWidget {
     this.onTapUp,
     this.onTapDown,
     this.onTapCancel,
+    this.isExclusiveTap,
     this.onSecondaryTapDown,
     this.onSecondaryTapUp,
     this.onTertiaryTapDown,
@@ -34,6 +35,9 @@ class TerminalGestureDetector extends StatefulWidget {
 
   final GestureTapDownCallback? onTapDown;
   final GestureTapCancelCallback? onTapCancel;
+
+  /// Host-owned taps must not participate in word/line multi-click selection.
+  final bool Function()? isExclusiveTap;
 
   final GestureTapDownCallback? onSecondaryTapDown;
 
@@ -77,11 +81,20 @@ class _TerminalGestureDetectorState extends State<TerminalGestureDetector> {
   /// True if a multi-tap down (double or triple) is detected. Used to discard
   /// subsequent tap up / tap hold of the same tap.
   bool _isMultiTap = false;
+  bool _exclusiveTap = false;
 
   // The down handler is force-run on success of a single tap and optimistically
   // run before a long press success.
   void _handleTapDown(TapDownDetails details) {
+    _exclusiveTap = widget.isExclusiveTap?.call() ?? false;
+    if (_exclusiveTap) {
+      _multiTapTimer?.cancel();
+      _multiTapTimeout();
+      _isMultiTap = false;
+    }
     widget.onTapDown?.call(details);
+
+    if (_exclusiveTap) return;
 
     if (_multiTapTimer != null &&
         _isWithinDoubleTapTolerance(details.globalPosition)) {
@@ -106,6 +119,7 @@ class _TerminalGestureDetectorState extends State<TerminalGestureDetector> {
   void _handleTapUp(TapUpDetails details) {
     if (!_isMultiTap) {
       widget.onSingleTapUp?.call(details);
+      if (_exclusiveTap) return;
       _lastTapOffset = details.globalPosition;
       _tapCount = 1;
       _multiTapTimer?.cancel();
