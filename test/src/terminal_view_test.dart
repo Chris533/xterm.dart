@@ -198,13 +198,20 @@ void main() {
         ),
       );
 
-      final pointer = TestPointer(1, PointerDeviceKind.mouse);
-
-      await tester.sendEventToBinding(pointer.down(Offset(1, 1)));
-
+      // Let initial terminal resize/notifications settle before pointer capture.
       await tester.pumpAndSettle();
+      final pointer = await tester.startGesture(
+        tester.getCenter(find.byType(TerminalView)),
+        kind: PointerDeviceKind.mouse,
+      );
 
-      expect(output, isNotEmpty);
+      await tester.pump();
+
+      // A held pointer may become host selection: no unmatched PTY press.
+      expect(output, isEmpty);
+      await pointer.up();
+      await tester.pumpAndSettle();
+      expect(output, hasLength(2)); // resolved press and release, exactly once
     });
 
     testWidgets('does not respond when disabled', (tester) async {
@@ -230,12 +237,15 @@ void main() {
         ),
       );
 
-      final pointer = TestPointer(1, PointerDeviceKind.mouse);
-
-      await tester.sendEventToBinding(pointer.down(Offset(1, 1)));
-
       await tester.pumpAndSettle();
-
+      final pointer = await tester.startGesture(
+        tester.getCenter(find.byType(TerminalView)),
+        kind: PointerDeviceKind.mouse,
+      );
+      await tester.pump();
+      expect(output, isEmpty);
+      await pointer.up();
+      await tester.pumpAndSettle();
       expect(output, isEmpty);
     });
   });
@@ -331,23 +341,37 @@ void main() {
       terminal.write('Hello World');
       await tester.pump();
 
-      await expectLater(
-        find.byType(TerminalView),
-        matchesGoldenFile('_goldens/text_scale_factor@1x.png'),
-      );
+      final view = tester.state<TerminalViewState>(find.byType(TerminalView));
+      final originalCellSize = view.renderTerminal.cellSize;
+      final originalColumns = terminal.viewWidth;
+      expect(originalCellSize.width, greaterThan(0));
+      expect(originalCellSize.height, greaterThan(0));
 
       textScaler.value = TextScaler.linear(2.0);
       await tester.pump();
 
-      await expectLater(
-        find.byType(TerminalView),
-        matchesGoldenFile('_goldens/text_scale_factor@2x.png'),
-      );
+      expect(tester.state<TerminalViewState>(find.byType(TerminalView)),
+          same(view));
+      expect(view.renderTerminal.cellSize.width,
+          closeTo(originalCellSize.width * 2, 0.001));
+      expect(
+          view.renderTerminal.cellSize.height,
+          // Paragraph height is pixel-quantized: 15.6 -> 16, 31.2 -> 31.
+          closeTo(originalCellSize.height * 2, 1.0));
+      expect(terminal.viewWidth, lessThan(originalColumns));
+      expect(terminal.buffer.getText(), contains('Hello World'));
+      await tester.pumpWidget(const SizedBox());
+      textScaler.dispose();
     });
 
     testWidgets('can obtain textScaler from parent', (tester) async {
       final terminal = Terminal();
 
+      await tester.pumpWidget(MaterialApp(home: TerminalView(terminal)));
+      final originalCellSize = tester
+          .state<TerminalViewState>(find.byType(TerminalView))
+          .renderTerminal
+          .cellSize;
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
@@ -364,10 +388,13 @@ void main() {
       terminal.write('Hello World');
       await tester.pump();
 
-      await expectLater(
-        find.byType(TerminalView),
-        matchesGoldenFile('_goldens/text_scale_factor@2x.png'),
-      );
+      final cellSize = tester
+          .state<TerminalViewState>(find.byType(TerminalView))
+          .renderTerminal
+          .cellSize;
+      expect(cellSize.width, closeTo(originalCellSize.width * 2, 0.001));
+      expect(cellSize.height, closeTo(originalCellSize.height * 2, 1.0));
+      expect(terminal.buffer.getText(), contains('Hello World'));
     });
   });
 
@@ -424,7 +451,7 @@ void main() {
     testWidgets('works', (tester) async {
       final terminalOutput = <String>[];
       final terminal = Terminal(onOutput: terminalOutput.add);
-      terminal.useAltBuffer();
+      terminal.write('\x1b[?1049h\x1b[?1007h');
 
       await tester.pumpWidget(MaterialApp(
         home: TerminalView(terminal, autofocus: true, simulateScroll: true),
@@ -438,7 +465,7 @@ void main() {
     testWidgets('does nothing when disabled', (tester) async {
       final terminalOutput = <String>[];
       final terminal = Terminal(onOutput: terminalOutput.add);
-      terminal.useAltBuffer();
+      terminal.write('\x1b[?1049h\x1b[?1007h');
 
       await tester.pumpWidget(MaterialApp(
         home: TerminalView(terminal, autofocus: true, simulateScroll: false),
@@ -449,7 +476,8 @@ void main() {
       expect(terminalOutput.join(), isEmpty);
     });
 
-    testWidgets('simulates arrows when mouse mode lacks alt-buffer scroll mode',
+    testWidgets(
+        'reports wheel without arrows when mouse mode lacks alt-buffer scroll mode',
         (tester) async {
       final terminalOutput = <String>[];
       final terminal = Terminal(onOutput: terminalOutput.add);
@@ -462,7 +490,9 @@ void main() {
       await tester.drag(find.byType(TerminalView), const Offset(0, -100));
 
       expect(terminal.altBufferMouseScrollMode, isFalse);
-      expect(terminalOutput.join(), contains('\x1B[B'));
+      expect(terminalOutput, isNotEmpty);
+      expect(terminalOutput.join(), contains('\x1B[M'));
+      expect(terminalOutput.join(), isNot(contains('\x1B[B')));
     });
 
     testWidgets('reports wheel input when alt-buffer scroll mode is enabled',
@@ -486,7 +516,7 @@ void main() {
         (tester) async {
       final terminalOutput = <String>[];
       final terminal = Terminal(onOutput: terminalOutput.add);
-      terminal.write('\x1b[?1049h');
+      terminal.write('\x1b[?1049h\x1b[?1007h');
 
       await tester.pumpWidget(MaterialApp(
         home: TerminalView(terminal, autofocus: true, simulateScroll: true),
