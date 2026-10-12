@@ -79,4 +79,7 @@ example/lib/debug.dart
 
 coverage/
 
+# Generated Flutter golden comparison images, not approved golden baselines.
+/test/src/failures/*.png
+
 example2/
