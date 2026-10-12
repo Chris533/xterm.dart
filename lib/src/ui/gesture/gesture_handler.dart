@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
@@ -77,11 +76,14 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
   Object? _originBuffer;
   TapDownDetails? _pendingLeftTap;
   bool _hostLeftGesture = false;
-  bool _previewTap = false;
+  bool _hostOwnedTap = false;
 
-  bool get _previewModifierHeld => defaultTargetPlatform == TargetPlatform.macOS
-      ? HardwareKeyboard.instance.isMetaPressed
-      : HardwareKeyboard.instance.isControlPressed;
+  bool _hostTapAt(TapDownDetails details) =>
+      terminalView.widget.isHostTap?.call(
+        details,
+        renderTerminal.getCellOffset(details.localPosition),
+      ) ??
+      false;
 
   void _setOrigin(CellOffset begin, [CellOffset? end]) {
     _clearOrigin();
@@ -138,7 +140,7 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
       onSingleTapUp: onSingleTapUp,
       onTapDown: onTapDown,
       onTapCancel: onTapCancel,
-      isExclusiveTap: () => _previewModifierHeld,
+      isExclusiveTap: _hostTapAt,
       onSecondaryTapDown: onSecondaryTapDown,
       onSecondaryTapUp: onSecondaryTapUp,
       onTertiaryTapDown: onTertiaryTapDown,
@@ -220,12 +222,11 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
     final down = _pendingLeftTap;
     _pendingLeftTap = null;
     if (down == null) return;
-    if (_previewTap) {
-      _previewTap = false;
-      // Host preview owns the resolved tap; do not also mutate a mouse TUI.
-      if (_previewModifierHeld) {
-        (widget.onTapUp ?? widget.onSingleTapUp)?.call(details);
-      }
+    if (_hostOwnedTap) {
+      _hostOwnedTap = false;
+      // Ownership was decided at down, before any application mouse report.
+      // Custom host callbacks revalidate captured targets themselves.
+      (widget.onTapUp ?? widget.onSingleTapUp)?.call(details);
       return;
     }
     _tapDown(null, down, TerminalMouseButton.left);
@@ -239,9 +240,10 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
   void onTapDown(TapDownDetails details) {
     if (!widget.enabled) return;
     _pendingLeftTap = details;
-    _previewTap = _previewModifierHeld;
-    _hostLeftGesture = !_previewTap && HardwareKeyboard.instance.isShiftPressed;
-    if (_previewTap) {
+    _hostOwnedTap = _hostTapAt(details);
+    _hostLeftGesture =
+        !_hostOwnedTap && HardwareKeyboard.instance.isShiftPressed;
+    if (_hostOwnedTap) {
       widget.onTapDown?.call(details);
       return;
     }

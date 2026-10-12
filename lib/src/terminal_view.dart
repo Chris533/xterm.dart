@@ -36,6 +36,7 @@ class TerminalView extends StatefulWidget {
     this.focusNode,
     this.autofocus = false,
     this.onTapUp,
+    this.isHostTap,
     this.onSecondaryTapDown,
     this.onSecondaryTapUp,
     this.onTertiaryTapUp,
@@ -90,6 +91,12 @@ class TerminalView extends StatefulWidget {
 
   /// Callback for when the user taps on the terminal.
   final void Function(TapUpDetails, CellOffset)? onTapUp;
+
+  /// Optional host ownership decision, made before a resolved tap can emit
+  /// application mouse reports or participate in multi-click selection.
+  /// Drag selection remains independent. False/absent leaves the tap to
+  /// ordinary terminal input; modifier keys alone never claim host ownership.
+  final bool Function(TapDownDetails, CellOffset)? isHostTap;
 
   /// Function called when the user taps on the terminal with a secondary
   /// button.
@@ -336,8 +343,7 @@ class TerminalViewState extends State<TerminalView> {
           widget.onSecondaryTapDown != null ? _onSecondaryTapDown : null,
       onSecondaryTapUp:
           widget.onSecondaryTapUp != null ? _onSecondaryTapUp : null,
-      onTertiaryTapUp:
-          widget.onTertiaryTapUp != null ? _onTertiaryTapUp : null,
+      onTertiaryTapUp: widget.onTertiaryTapUp != null ? _onTertiaryTapUp : null,
       readOnly: widget.readOnly,
       enabled: widget.renderingEnabled,
       child: child,

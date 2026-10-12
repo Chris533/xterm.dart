@@ -37,7 +37,7 @@ class TerminalGestureDetector extends StatefulWidget {
   final GestureTapCancelCallback? onTapCancel;
 
   /// Host-owned taps must not participate in word/line multi-click selection.
-  final bool Function()? isExclusiveTap;
+  final bool Function(TapDownDetails)? isExclusiveTap;
 
   final GestureTapDownCallback? onSecondaryTapDown;
 
@@ -86,7 +86,7 @@ class _TerminalGestureDetectorState extends State<TerminalGestureDetector> {
   // The down handler is force-run on success of a single tap and optimistically
   // run before a long press success.
   void _handleTapDown(TapDownDetails details) {
-    _exclusiveTap = widget.isExclusiveTap?.call() ?? false;
+    _exclusiveTap = widget.isExclusiveTap?.call(details) ?? false;
     if (_exclusiveTap) {
       _multiTapTimer?.cancel();
       _multiTapTimeout();

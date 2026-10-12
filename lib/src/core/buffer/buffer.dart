@@ -123,6 +123,18 @@ class Buffer {
     codePoint = charset.translate(codePoint);
 
     final cellWidth = unicodeV11.wcwidth(codePoint);
+    // A wide glyph must stay on one row. Writing its spacer recursively at
+    // the right margin otherwise wraps only the spacer and loses the glyph
+    // from getText()/logical-line reconstruction.
+    if (cellWidth == 2 &&
+        viewWidth > 1 &&
+        _cursorX == viewWidth - 1 &&
+        terminal.autoWrapMode) {
+      currentLine.setCell(_cursorX, 0, 1, terminal.cursor);
+      index();
+      setCursorX(0);
+      currentLine.isWrapped = true;
+    }
     if (_cursorX >= terminal.viewWidth) {
       index();
       setCursorX(0);
