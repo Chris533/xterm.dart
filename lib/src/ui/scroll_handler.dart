@@ -13,6 +13,7 @@ class TerminalScrollGestureHandler extends StatefulWidget {
     required this.getCellOffset,
     required this.getLineHeight,
     this.simulateScroll = true,
+    this.onApplicationScroll,
     required this.child,
   });
 
@@ -27,6 +28,10 @@ class TerminalScrollGestureHandler extends StatefulWidget {
   /// Whether to allow arrow simulation when the application enables
   /// alternate-scroll mode (DECSET 1007) without requesting mouse reports.
   final bool simulateScroll;
+
+  /// Invalidate host selection before the application moves/redraws its screen.
+  /// Ordinary scrollback viewport movement does not invoke this callback.
+  final VoidCallback? onApplicationScroll;
 
   final Widget child;
 
@@ -115,6 +120,13 @@ class _TerminalScrollGestureHandlerState
     final currentLineOffset = offset ~/ widget.getLineHeight();
 
     final delta = currentLineOffset - lastLineOffset;
+
+    if (delta != 0 &&
+        (widget.terminal.mouseMode.reportScroll ||
+            (widget.simulateScroll &&
+                widget.terminal.altBufferMouseScrollMode))) {
+      widget.onApplicationScroll?.call();
+    }
 
     for (var i = 0; i < delta.abs(); i++) {
       _sendScrollEvent(delta < 0);

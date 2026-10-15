@@ -74,6 +74,7 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
   CellAnchor? _selectionBase;
   CellAnchor? _selectionEnd;
   Object? _originBuffer;
+  int? _originSelectionRevision;
   TapDownDetails? _pendingLeftTap;
   bool _hostLeftGesture = false;
   bool _hostOwnedTap = false;
@@ -89,6 +90,7 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
     _clearOrigin();
     final buffer = terminalView.widget.terminal.buffer;
     _originBuffer = buffer;
+    _originSelectionRevision = widget.terminalController.selectionClearRevision;
     _selectionBase = buffer.createAnchorFromOffset(begin);
     if (end != null) _selectionEnd = buffer.createAnchorFromOffset(end);
   }
@@ -99,10 +101,13 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
     _selectionBase = null;
     _selectionEnd = null;
     _originBuffer = null;
+    _originSelectionRevision = null;
   }
 
   CellOffset? get _base {
     if (_originBuffer != terminalView.widget.terminal.buffer ||
+        _originSelectionRevision !=
+            widget.terminalController.selectionClearRevision ||
         _selectionBase?.attached != true ||
         (_selectionEnd != null && !_selectionEnd!.attached)) {
       if (_originBuffer != null) widget.terminalController.clearSelection();

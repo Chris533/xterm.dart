@@ -21,6 +21,11 @@ class TerminalController with ChangeNotifier {
   CellAnchor? _selectionBase;
   CellAnchor? _selectionExtent;
 
+  /// Changes when a host selection is explicitly invalidated. Gesture origins
+  /// use this to avoid resurrecting a range after an application redraw scroll.
+  int get selectionClearRevision => _selectionClearRevision;
+  int _selectionClearRevision = 0;
+
   SelectionMode get selectionMode => _selectionMode;
   SelectionMode _selectionMode;
 
@@ -92,6 +97,7 @@ class TerminalController with ChangeNotifier {
 
   /// Clears the current selection.
   void clearSelection() {
+    _selectionClearRevision++;
     _selectionBase?.dispose();
     _selectionBase = null;
     _selectionExtent?.dispose();
