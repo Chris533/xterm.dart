@@ -14,6 +14,7 @@ class TerminalScrollGestureHandler extends StatefulWidget {
     required this.getLineHeight,
     this.simulateScroll = true,
     this.onApplicationScroll,
+    this.interceptApplicationScroll,
     required this.child,
   });
 
@@ -32,6 +33,10 @@ class TerminalScrollGestureHandler extends StatefulWidget {
   /// Invalidate host selection before the application moves/redraws its screen.
   /// Ordinary scrollback viewport movement does not invoke this callback.
   final VoidCallback? onApplicationScroll;
+
+  /// An explicit host reading surface may own this wheel instead. Refusal is
+  /// local only: consume its offset, never replay it on a later scroll.
+  final bool Function()? interceptApplicationScroll;
 
   final Widget child;
 
@@ -125,6 +130,10 @@ class _TerminalScrollGestureHandlerState
         (widget.terminal.mouseMode.reportScroll ||
             (widget.simulateScroll &&
                 widget.terminal.altBufferMouseScrollMode))) {
+      if (widget.interceptApplicationScroll?.call() == true) {
+        lastLineOffset = currentLineOffset;
+        return;
+      }
       widget.onApplicationScroll?.call();
     }
 

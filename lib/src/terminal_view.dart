@@ -53,6 +53,7 @@ class TerminalView extends StatefulWidget {
     this.simulateScroll = true,
     this.onSelectionChanged,
     this.onBeforeApplicationScroll,
+    this.interceptApplicationScroll,
     this.renderingEnabled = true,
   });
 
@@ -163,6 +164,9 @@ class TerminalView extends StatefulWidget {
   /// Hosts may retain copy text here; the live selection is still cleared.
   /// Ordinary scrollback viewport movement does not invoke this hook.
   final VoidCallback? onBeforeApplicationScroll;
+
+  /// Opt-in host copy/read interception; default keeps application scrolling.
+  final bool Function()? interceptApplicationScroll;
 
   /// When false, output-driven invalidation of the render object is
   /// suppressed: no layout requests, no IME editable-rect updates, and no
@@ -288,6 +292,7 @@ class TerminalViewState extends State<TerminalView> {
     child = TerminalScrollGestureHandler(
       terminal: widget.terminal,
       simulateScroll: widget.simulateScroll,
+      interceptApplicationScroll: widget.interceptApplicationScroll,
       onApplicationScroll: () {
         widget.onBeforeApplicationScroll?.call();
         _controller.clearSelection();
