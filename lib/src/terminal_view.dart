@@ -52,6 +52,7 @@ class TerminalView extends StatefulWidget {
     this.hardwareKeyboardOnly = false,
     this.simulateScroll = true,
     this.onSelectionChanged,
+    this.onBeforeApplicationScroll,
     this.renderingEnabled = true,
   });
 
@@ -157,6 +158,11 @@ class TerminalView extends StatefulWidget {
   /// Called when the selection changes. The [String?] argument is the selected
   /// text, or null if the selection was cleared.
   final void Function(String? selectedText)? onSelectionChanged;
+
+  /// Called before application-owned wheel input invalidates the selected grid.
+  /// Hosts may retain copy text here; the live selection is still cleared.
+  /// Ordinary scrollback viewport movement does not invoke this hook.
+  final VoidCallback? onBeforeApplicationScroll;
 
   /// When false, output-driven invalidation of the render object is
   /// suppressed: no layout requests, no IME editable-rect updates, and no
@@ -282,7 +288,10 @@ class TerminalViewState extends State<TerminalView> {
     child = TerminalScrollGestureHandler(
       terminal: widget.terminal,
       simulateScroll: widget.simulateScroll,
-      onApplicationScroll: _controller.clearSelection,
+      onApplicationScroll: () {
+        widget.onBeforeApplicationScroll?.call();
+        _controller.clearSelection();
+      },
       getCellOffset: (offset) => renderTerminal.getCellOffset(offset),
       getLineHeight: () => renderTerminal.lineHeight,
       child: child,
