@@ -254,12 +254,14 @@ class TerminalViewState extends State<TerminalView> {
   }
 
   void _onControllerSelectionChanged() {
+    final callback = widget.onSelectionChanged;
+    if (callback == null) return;
     final selection = _controller.selection;
     if (selection != null) {
       final text = widget.terminal.buffer.getText(selection);
-      widget.onSelectionChanged?.call(text);
+      callback(text);
     } else {
-      widget.onSelectionChanged?.call(null);
+      callback(null);
     }
   }
 
@@ -385,6 +387,10 @@ class TerminalViewState extends State<TerminalView> {
   void closeKeyboard() {
     _customTextEditKey.currentState?.closeKeyboard();
   }
+
+  /// Current host viewport, for a gesture-local selection subscription only.
+  ScrollPosition? get selectionScrollPosition =>
+      _scrollableKey.currentState?.position;
 
   bool scrollBy(double delta) {
     final position = _scrollableKey.currentState?.position;

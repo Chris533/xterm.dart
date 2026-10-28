@@ -66,6 +66,8 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
 
   Offset? _lastDragLocalPosition;
   Timer? _selectionAutoScrollTimer;
+  ScrollPosition? _dragScrollPosition;
+  double? _dragScrollPixels;
 
   LongPressStartDetails? _lastLongPressStartDetails;
 
@@ -123,7 +125,12 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
       _stopSelectionAutoScroll();
       return;
     }
-    renderTerminal.extendSelection(position, base,
+    final size = renderTerminal.size;
+    final visiblePosition = Offset(
+      position.dx.clamp(0.0, size.width > 0 ? size.width - 1 : 0.0),
+      position.dy.clamp(0.0, size.height > 0 ? size.height - 1 : 0.0),
+    );
+    renderTerminal.extendSelection(visiblePosition, base,
         originEnd: _selectionEnd?.offset);
   }
 
@@ -324,9 +331,13 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
 
   void onDragStart(DragStartDetails details) {
     if (!widget.enabled) return;
+    _stopSelectionAutoScroll();
     _pendingLeftTap = null;
     _hostLeftGesture = true;
     _lastDragLocalPosition = details.localPosition;
+    _dragScrollPosition = terminalView.selectionScrollPosition;
+    _dragScrollPixels = _dragScrollPosition?.pixels;
+    _dragScrollPosition?.addListener(_onDragScroll);
 
     // Record selection base for Shift+Click.
     _setOrigin(renderTerminal.getSelectionCellOffset(details.localPosition));
@@ -381,9 +392,23 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
   }
 
   void _stopSelectionAutoScroll() {
+    _dragScrollPosition?.removeListener(_onDragScroll);
+    _dragScrollPosition = null;
+    _dragScrollPixels = null;
     _selectionAutoScrollTimer?.cancel();
     _selectionAutoScrollTimer = null;
     _lastDragLocalPosition = null;
+  }
+
+  void _onDragScroll() {
+    final position = _lastDragLocalPosition;
+    final pixels = _dragScrollPosition?.pixels;
+    if (!widget.enabled || position == null || pixels == _dragScrollPixels)
+      return;
+    _dragScrollPixels = pixels;
+    // A stationary held mouse still selects newly revealed history. Subscribe
+    // only for the drag lifetime, never to terminal output or background panes.
+    _extend(position);
   }
 
   void _tickSelectionAutoScroll() {
