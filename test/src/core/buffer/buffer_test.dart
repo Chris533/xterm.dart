@@ -2,6 +2,48 @@ import 'package:test/test.dart';
 import 'package:xterm/xterm.dart';
 
 void main() {
+  for (final alternate in [false, true]) {
+    for (final operation in ['S', 'T', 'M']) {
+      for (final count in [1, 2, 4]) {
+        test(
+            'row move keeps indexes and evicts anchors: $alternate $count$operation',
+            () {
+          final terminal = Terminal(maxLines: 100);
+          terminal.resize(20, 6);
+          if (alternate) terminal.write('\x1b[?1049h');
+          terminal.write(List.generate(6, (i) => 'row-$i').join('\r\n'));
+          // Keep header/footer outside the scrolling region.
+          terminal.write('\x1b[2;5r\x1b[2;1H');
+          final buffer = terminal.buffer;
+          final anchors =
+              List.generate(6, (i) => buffer.lines[i].createAnchor(0));
+          terminal.write('\x1b[$count$operation');
+          for (var i = 0; i < 6; i++) {
+            expect(buffer.lines[i].attached, isTrue);
+            expect(buffer.lines[i].index, i);
+            if (i == 0 || i == 5) {
+              expect(buffer.lines[i].getText(), 'row-$i');
+              expect(anchors[i].offset.y, i);
+            } else {
+              final source = operation == 'T' ? i - count : i + count;
+              expect(buffer.lines[i].getText(),
+                  source >= 1 && source <= 4 ? 'row-$source' : '');
+              final destination = operation == 'T' ? i + count : i - count;
+              if (destination >= 1 && destination <= 4) {
+                expect(anchors[i].attached, isTrue);
+                expect(anchors[i].offset.y, destination);
+              } else {
+                expect(anchors[i].attached, isFalse);
+              }
+            }
+          }
+          for (final anchor in anchors) {
+            anchor.dispose();
+          }
+        });
+      }
+    }
+  }
   group('Buffer.getText()', () {
     test('should return the text', () {
       final terminal = Terminal();

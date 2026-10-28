@@ -31,6 +31,30 @@ extension ToIndexedValue<T> on T {
 }
 
 void main() {
+  for (final direction in [true, false]) {
+    test('move preserves ownership through source replacement $direction', () {
+      final buffer = IndexAwareCircularBuffer<IndexedValue<int>>(5);
+      buffer.pushAll(List.generate(8, IndexedValue.new));
+      final source = direction ? 1 : 3;
+      final target = direction ? 3 : 1;
+      final moved = buffer[source];
+      final overwritten = buffer[target];
+      buffer.move(source, target);
+      buffer[source] = IndexedValue(100);
+      expect(identical(buffer[target], moved), isTrue);
+      expect(moved.attached, isTrue);
+      expect(moved.index, target);
+      expect(overwritten.attached, isFalse);
+      for (var i = 0; i < buffer.length; i++) {
+        expect(buffer[i].attached, isTrue);
+        expect(buffer[i].index, i);
+      }
+      buffer.move(target, target);
+      expect(moved.attached, isTrue);
+      expect(() => buffer.move(-1, target), throwsRangeError);
+      expect(() => buffer.move(target, buffer.length), throwsRangeError);
+    });
+  }
   group("IndexAwareCircularBuffer", () {
     test("normal creation test", () {
       final cl = IndexAwareCircularBuffer<IndexedValue<int>>(1000);

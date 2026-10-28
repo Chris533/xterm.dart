@@ -112,6 +112,17 @@ class IndexAwareCircularBuffer<T extends IndexedItem> {
     _adoptChild(index, value);
   }
 
+  /// Moves an existing item without temporarily attaching it at two indexes.
+  /// The source slot is empty afterward and must be filled by the caller before
+  /// the buffer is observed again. Overwritten destination items are detached.
+  /// Unlike assignment, a later source replacement cannot detach the moved item.
+  void move(int fromIndex, int toIndex) {
+    RangeError.checkValueInInterval(fromIndex, 0, length - 1, 'fromIndex');
+    RangeError.checkValueInInterval(toIndex, 0, length - 1, 'toIndex');
+    if (fromIndex == toIndex) return;
+    _moveChild(fromIndex, toIndex);
+  }
+
   /// Removes all elements from the list.
   void clear() {
     for (var i = 0; i < _length; i++) {
