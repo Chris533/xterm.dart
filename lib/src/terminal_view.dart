@@ -160,8 +160,8 @@ class TerminalView extends StatefulWidget {
   /// text, or null if the selection was cleared.
   final void Function(String? selectedText)? onSelectionChanged;
 
-  /// Called before application-owned wheel input invalidates the selected grid.
-  /// Hosts may retain copy text here; the live selection is still cleared.
+  /// Called before application-owned wheel input may redraw the selected grid.
+  /// Live selection anchors are preserved; copied text reflects current cells.
   /// Ordinary scrollback viewport movement does not invoke this hook.
   final VoidCallback? onBeforeApplicationScroll;
 
@@ -297,7 +297,6 @@ class TerminalViewState extends State<TerminalView> {
       interceptApplicationScroll: widget.interceptApplicationScroll,
       onApplicationScroll: () {
         widget.onBeforeApplicationScroll?.call();
-        _controller.clearSelection();
       },
       getCellOffset: (offset) => renderTerminal.getCellOffset(offset),
       getLineHeight: () => renderTerminal.lineHeight,
