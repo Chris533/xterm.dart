@@ -387,10 +387,6 @@ class TerminalViewState extends State<TerminalView> {
     _customTextEditKey.currentState?.closeKeyboard();
   }
 
-  /// Current host viewport, for a gesture-local selection subscription only.
-  ScrollPosition? get selectionScrollPosition =>
-      _scrollableKey.currentState?.position;
-
   bool scrollBy(double delta) {
     final position = _scrollableKey.currentState?.position;
     if (position == null) {
