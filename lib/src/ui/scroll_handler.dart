@@ -41,11 +41,11 @@ class TerminalScrollGestureHandler extends StatefulWidget {
   final Widget child;
 
   @override
-  State<TerminalScrollGestureHandler> createState() =>
-      _TerminalScrollGestureHandlerState();
+  TerminalScrollGestureHandlerState createState() =>
+      TerminalScrollGestureHandlerState();
 }
 
-class _TerminalScrollGestureHandlerState
+class TerminalScrollGestureHandlerState
     extends State<TerminalScrollGestureHandler> {
   /// Whether the application is in alternate screen buffer. If false, then this
   /// widget does nothing.
@@ -58,6 +58,22 @@ class _TerminalScrollGestureHandlerState
   /// This variable tracks the last offset where the scroll gesture started.
   /// Used to calculate the cell offset of the terminal mouse event.
   var lastPointerPosition = Offset.zero;
+
+  /// Explicit held-selection edge scrolling uses the same application modes
+  /// and interception as wheel input, without changing the wheel baseline.
+  bool scrollSelection({required bool up, required Offset position}) {
+    if (!widget.terminal.isUsingAltBuffer ||
+        !(widget.terminal.mouseMode.reportScroll ||
+            (widget.simulateScroll &&
+                widget.terminal.altBufferMouseScrollMode)) ||
+        widget.interceptApplicationScroll?.call() == true) {
+      return false;
+    }
+    lastPointerPosition = position;
+    widget.onApplicationScroll?.call();
+    _sendScrollEvent(up);
+    return true;
+  }
 
   @override
   void initState() {

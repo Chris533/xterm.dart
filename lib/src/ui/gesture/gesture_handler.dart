@@ -66,6 +66,7 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
 
   Offset? _lastDragLocalPosition;
   Timer? _selectionAutoScrollTimer;
+  int _applicationScrollTicks = 0;
 
   LongPressStartDetails? _lastLongPressStartDetails;
 
@@ -387,6 +388,7 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
   }
 
   void _stopSelectionAutoScroll() {
+    _applicationScrollTicks = 0;
     _selectionAutoScrollTimer?.cancel();
     _selectionAutoScrollTimer = null;
     _lastDragLocalPosition = null;
@@ -421,7 +423,16 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
       delta = (overflow / _autoScrollEdgeInset) * renderTerminal.lineHeight;
     }
 
-    if (delta == 0 || !terminalView.scrollBy(delta)) {
+    if (delta == 0) return;
+    // TUI redraws are substantially more expensive than a host viewport jump.
+    // At most one application wheel report per five active 16ms drag ticks.
+    if (terminalView.widget.terminal.isUsingAltBuffer &&
+        _applicationScrollTicks++ % 5 != 0) return;
+    final edgePosition = Offset(
+      dragPosition.dx.clamp(0.0, renderTerminal.size.width - 1),
+      dragPosition.dy.clamp(0.0, viewportHeight - 1),
+    );
+    if (!terminalView.scrollBy(delta, selectionPosition: edgePosition)) {
       return;
     }
 

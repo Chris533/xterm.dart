@@ -187,6 +187,7 @@ class TerminalViewState extends State<TerminalView> {
   final _customTextEditKey = GlobalKey<CustomTextEditState>();
 
   final _scrollableKey = GlobalKey<ScrollableState>();
+  final _applicationScrollKey = GlobalKey<TerminalScrollGestureHandlerState>();
 
   final _viewportKey = GlobalKey();
 
@@ -292,6 +293,7 @@ class TerminalViewState extends State<TerminalView> {
     );
 
     child = TerminalScrollGestureHandler(
+      key: _applicationScrollKey,
       terminal: widget.terminal,
       simulateScroll: widget.simulateScroll,
       interceptApplicationScroll: widget.interceptApplicationScroll,
@@ -387,7 +389,14 @@ class TerminalViewState extends State<TerminalView> {
     _customTextEditKey.currentState?.closeKeyboard();
   }
 
-  bool scrollBy(double delta) {
+  bool scrollBy(double delta, {Offset? selectionPosition}) {
+    if (widget.terminal.isUsingAltBuffer && selectionPosition != null) {
+      return _applicationScrollKey.currentState?.scrollSelection(
+            up: delta < 0,
+            position: selectionPosition,
+          ) ??
+          false;
+    }
     final position = _scrollableKey.currentState?.position;
     if (position == null) {
       return false;
