@@ -65,6 +65,8 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
   RenderTerminal get renderTerminal => terminalView.renderTerminal;
 
   Offset? _lastDragLocalPosition;
+  Object? _dragBuffer;
+  int? _dragSelectionRevision;
   Timer? _selectionAutoScrollTimer;
   int _applicationScrollTicks = 0;
 
@@ -127,7 +129,12 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
   void _extend(Offset position) {
     final base = _base;
     if (base == null) {
-      _stopSelectionAutoScroll();
+      // Invalid copy geometry is not the end of the user's held drag. A TUI
+      // can replace its screen after each wheel request; keep scrolling while
+      // preserving (not extending) the original copy payload.
+      if (!terminalView.widget.terminal.isUsingAltBuffer || !_ownsHeldDrag) {
+        _stopSelectionAutoScroll();
+      }
       return;
     }
     final size = renderTerminal.size;
@@ -340,6 +347,8 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
     _pendingLeftTap = null;
     _hostLeftGesture = true;
     _lastDragLocalPosition = details.localPosition;
+    _dragBuffer = terminalView.widget.terminal.buffer;
+    _dragSelectionRevision = widget.terminalController.selectionClearRevision;
 
     // Record selection base for Shift+Click.
     _setOrigin(renderTerminal.getSelectionCellOffset(details.localPosition));
@@ -398,16 +407,24 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
     _selectionAutoScrollTimer?.cancel();
     _selectionAutoScrollTimer = null;
     _lastDragLocalPosition = null;
+    _dragBuffer = null;
+    _dragSelectionRevision = null;
   }
+
+  bool get _ownsHeldDrag =>
+      _lastDragLocalPosition != null &&
+      identical(_dragBuffer, terminalView.widget.terminal.buffer) &&
+      _dragSelectionRevision == widget.terminalController.selectionClearRevision;
 
   void _tickSelectionAutoScroll() {
     if (!widget.enabled) {
       _stopSelectionAutoScroll();
       return;
     }
-    final base = _base;
     final dragPosition = _lastDragLocalPosition;
-    if (base == null || dragPosition == null) {
+    if (!_ownsHeldDrag ||
+        dragPosition == null ||
+        (!terminalView.widget.terminal.isUsingAltBuffer && _base == null)) {
       _stopSelectionAutoScroll();
       return;
     }
@@ -433,7 +450,9 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
     // TUI redraws are substantially more expensive than a host viewport jump.
     // At most one application wheel report per five active 16ms drag ticks.
     if (terminalView.widget.terminal.isUsingAltBuffer &&
-        _applicationScrollTicks++ % 5 != 0) return;
+        _applicationScrollTicks++ % 5 != 0) {
+      return;
+    }
     final edgePosition = Offset(
       dragPosition.dx.clamp(0.0, renderTerminal.size.width - 1),
       dragPosition.dy.clamp(0.0, viewportHeight - 1),
