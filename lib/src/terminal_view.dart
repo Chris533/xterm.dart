@@ -161,7 +161,8 @@ class TerminalView extends StatefulWidget {
   final void Function(String? selectedText)? onSelectionChanged;
 
   /// Called before application-owned wheel input may redraw the selected grid.
-  /// Live selection anchors are preserved; copied text reflects current cells.
+  /// Live selection anchors are preserved. A controller opting into selected-text
+  /// retention can hide invalidated highlights while preserving its copy text.
   /// Ordinary scrollback viewport movement does not invoke this hook.
   final VoidCallback? onBeforeApplicationScroll;
 
@@ -433,7 +434,7 @@ class TerminalViewState extends State<TerminalView> {
     if (HardwareKeyboard.instance.isShiftPressed) {
       return;
     }
-    if (_controller.selection != null) {
+    if (_controller.hasSelection) {
       _controller.clearSelection();
     } else {
       if (!widget.hardwareKeyboardOnly) {

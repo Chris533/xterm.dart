@@ -106,6 +106,12 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
   }
 
   CellOffset? get _base {
+    if (widget.terminalController.isSelectionHidden) {
+      // Do not extend a stale range into unrelated replacement text. Keep the
+      // selected copy payload until the user explicitly selects or cancels.
+      _clearOrigin();
+      return null;
+    }
     if (_originBuffer != terminalView.widget.terminal.buffer ||
         _originSelectionRevision !=
             widget.terminalController.selectionClearRevision ||

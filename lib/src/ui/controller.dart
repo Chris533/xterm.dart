@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:meta/meta.dart';
 import 'package:xterm/src/base/disposable.dart';
+import 'package:xterm/src/core/buffer/buffer.dart';
 import 'package:xterm/src/core/buffer/cell_offset.dart';
 import 'package:xterm/src/core/buffer/line.dart';
 import 'package:xterm/src/core/buffer/range.dart';
@@ -11,6 +12,7 @@ import 'package:xterm/src/ui/selection_mode.dart';
 
 class TerminalController with ChangeNotifier {
   TerminalController({
+    this.selectionBuffer,
     SelectionMode selectionMode = SelectionMode.line,
     PointerInputs pointerInputs = const PointerInputs({PointerInput.tap}),
     bool suspendPointerInput = false,
@@ -20,6 +22,70 @@ class TerminalController with ChangeNotifier {
 
   CellAnchor? _selectionBase;
   CellAnchor? _selectionExtent;
+
+  /// Opt-in selected-text retention. Reads occur only for explicit selection
+  /// changes and validation of selected rows, never via an output subscription.
+  final Buffer Function()? selectionBuffer;
+  Buffer? _selectionOwner;
+  String? _selectedText;
+  bool _selectionHidden = false;
+  List<(BufferLine, int)> _selectedRows = [];
+  BufferRange? _checkedRange;
+
+  String? get selectedText {
+    _checkOwner();
+    return _selectedText;
+  }
+
+  bool get hasSelection =>
+      selectedText?.isNotEmpty == true || selection?.isCollapsed == false;
+
+  int get selectionRevision => _selectionRevision;
+  int _selectionRevision = 0;
+
+  bool get isSelectionHidden {
+    final current = selection; // Validate before a gesture attempts to extend.
+    return current == null && _selectionHidden;
+  }
+
+  void _checkOwner() {
+    if (_selectionOwner != null &&
+        !identical(_selectionOwner, selectionBuffer?.call())) {
+      _selectedText = null;
+      _selectedRows = [];
+      _checkedRange = null;
+      _selectionOwner = null;
+      _selectionHidden = true;
+      _selectionClearRevision++;
+    }
+  }
+
+  void _rememberRows(Buffer buffer, BufferRange range) {
+    final normalized = range.normalized;
+    _selectedRows = [
+      for (var y = normalized.begin.y; y <= normalized.end.y; y++)
+        if (y >= 0 && y < buffer.height)
+          (buffer.lines[y], buffer.lines[y].version),
+    ];
+    _checkedRange = range;
+  }
+
+  bool _sameRows(Buffer buffer, BufferRange range) {
+    final normalized = range.normalized;
+    if (_checkedRange?.begin.x != range.begin.x ||
+        _checkedRange?.end.x != range.end.x ||
+        normalized.end.y - normalized.begin.y + 1 != _selectedRows.length) {
+      return false;
+    }
+    for (var i = 0; i < _selectedRows.length; i++) {
+      final y = normalized.begin.y + i;
+      if (y < 0 || y >= buffer.height) return false;
+      final row = buffer.lines[y];
+      final saved = _selectedRows[i];
+      if (!identical(row, saved.$1) || row.version != saved.$2) return false;
+    }
+    return true;
+  }
 
   /// Changes when a host selection is explicitly invalidated. Gesture origins
   /// use this to avoid resurrecting a range after an application redraw scroll.
@@ -41,6 +107,8 @@ class TerminalController with ChangeNotifier {
   final _highlights = <TerminalHighlight>[];
 
   BufferRange? get selection {
+    _checkOwner();
+    if (_selectionHidden) return null;
     final base = _selectionBase;
     final extent = _selectionExtent;
 
@@ -49,16 +117,28 @@ class TerminalController with ChangeNotifier {
     }
 
     if (!base.attached || !extent.attached) {
+      _selectionHidden = _selectedText != null;
       return null;
     }
 
-    return _createRange(base.offset, extent.offset);
+    final range = _createRange(base.offset, extent.offset);
+    final buffer = _selectionOwner;
+    if (buffer != null && _selectedText != null && !_sameRows(buffer, range)) {
+      if (buffer.getText(range) != _selectedText) {
+        _selectionHidden = true;
+        _selectedRows = [];
+        return null;
+      }
+      _rememberRows(buffer, range);
+    }
+    return range;
   }
 
   /// Set selection on the terminal from [base] to [extent]. This method takes
   /// the ownership of [base] and [extent] and will dispose them when the
   /// selection is cleared or changed.
   void setSelection(CellAnchor base, CellAnchor extent, {SelectionMode? mode}) {
+    _selectionRevision++;
     _selectionBase?.dispose();
     _selectionBase = base;
 
@@ -68,6 +148,14 @@ class TerminalController with ChangeNotifier {
     if (mode != null) {
       _selectionMode = mode;
     }
+
+    _selectionHidden = false;
+    _selectionOwner = selectionBuffer?.call();
+    final range = _createRange(base.offset, extent.offset);
+    _selectedText = range.isCollapsed ? null : _selectionOwner?.getText(range);
+    _selectedRows = [];
+    _checkedRange = null;
+    if (_selectedText != null) _rememberRows(_selectionOwner!, range);
 
     notifyListeners();
   }
@@ -91,18 +179,45 @@ class TerminalController with ChangeNotifier {
       return;
     }
     // Set the new mode.
+    final current = selection;
     _selectionMode = newSelectionMode;
+    _selectionRevision++;
+    if (_selectedText != null) {
+      if (current == null) {
+        clearSelection();
+        return;
+      }
+      final range = _createRange(current.begin, current.end);
+      _selectedText = _selectionOwner!.getText(range);
+      _rememberRows(_selectionOwner!, range);
+    }
     notifyListeners();
   }
 
   /// Clears the current selection.
   void clearSelection() {
+    _selectionRevision++;
+    _selectionOwner = null;
+    _selectedText = null;
+    _selectedRows = [];
+    _checkedRange = null;
+    _selectionHidden = false;
     _selectionClearRevision++;
     _selectionBase?.dispose();
     _selectionBase = null;
     _selectionExtent?.dispose();
     _selectionExtent = null;
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _selectionBase?.dispose();
+    _selectionExtent?.dispose();
+    _selectedRows = [];
+    _selectedText = null;
+    _selectionOwner = null;
+    super.dispose();
   }
 
   // Select which type of pointer events are send to the terminal.
