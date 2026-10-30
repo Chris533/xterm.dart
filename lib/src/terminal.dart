@@ -64,6 +64,9 @@ class Terminal with Observable implements TerminalState, EscapeHandler {
   /// escape sequence.
   void Function(String code, List<String> args)? onPrivateOSC;
 
+  /// Observes RIS for host extension state; does not implement grid reset.
+  void Function()? onResetSequence;
+
   /// Flag to toggle os specific behaviors.
   final TerminalTargetPlatform platform;
 
@@ -486,7 +489,7 @@ class Terminal with Observable implements TerminalState, EscapeHandler {
 
   @override
   void unkownEscape(int char) {
-    // no-op
+    if (char == 0x63) onResetSequence?.call();
   }
 
   /* CSI */
