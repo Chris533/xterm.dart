@@ -7,6 +7,7 @@ import 'package:xterm/src/core/buffer/cell_offset.dart';
 import 'package:xterm/src/core/buffer/line.dart';
 import 'package:xterm/src/core/mouse/button.dart';
 import 'package:xterm/src/core/mouse/button_state.dart';
+import 'package:xterm/src/core/mouse/mode.dart';
 import 'package:xterm/src/terminal_view.dart';
 import 'package:xterm/src/ui/controller.dart';
 import 'package:xterm/src/ui/gesture/gesture_detector.dart';
@@ -81,6 +82,30 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
   TapDownDetails? _pendingLeftTap;
   bool _hostLeftGesture = false;
   bool _hostOwnedTap = false;
+  bool _applicationDrag = false;
+  Offset _applicationDragPosition = Offset.zero;
+
+  void _reportApplicationDrag(Offset position, TerminalMouseButtonState state,
+      {bool motion = false}) {
+    final size = renderTerminal.size;
+    _applicationDragPosition = Offset(
+      position.dx.clamp(0.0, size.width - 1),
+      position.dy.clamp(0.0, size.height - 1),
+    );
+    terminalView.widget.terminal.mouseInput(
+      TerminalMouseButton.left,
+      state,
+      renderTerminal.getCellOffset(_applicationDragPosition),
+      isMotion: motion,
+    );
+  }
+
+  void _endApplicationDrag() {
+    if (!_applicationDrag) return;
+    _reportApplicationDrag(
+        _applicationDragPosition, TerminalMouseButtonState.up);
+    _applicationDrag = false;
+  }
 
   bool _hostTapAt(TapDownDetails details) =>
       terminalView.widget.isHostTap?.call(
@@ -343,6 +368,28 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
 
   void onDragStart(DragStartDetails details) {
     if (!widget.enabled) return;
+    final mode = terminalView.widget.terminal.mouseMode;
+    assert(() {
+      debugPrint('Terminal selection drag: mouseMode=${mode.name}, '
+          'alternate=${terminalView.widget.terminal.isUsingAltBuffer}, '
+          'shift=${HardwareKeyboard.instance.isShiftPressed}, '
+          'pointerAllowed=$_shouldSendTapEvent, hostTap=$_hostOwnedTap');
+      return true;
+    }());
+    if (_shouldSendTapEvent &&
+        !HardwareKeyboard.instance.isShiftPressed &&
+        !_hostOwnedTap &&
+        (mode == MouseMode.upDownScrollDrag ||
+            mode == MouseMode.upDownScrollMove)) {
+      final origin = _pendingLeftTap?.localPosition ?? details.localPosition;
+      _pendingLeftTap = null;
+      _applicationDrag = true;
+      _reportApplicationDrag(origin, TerminalMouseButtonState.down);
+      _reportApplicationDrag(
+          details.localPosition, TerminalMouseButtonState.down,
+          motion: true);
+      return;
+    }
     _stopSelectionAutoScroll();
     _pendingLeftTap = null;
     _hostLeftGesture = true;
@@ -360,6 +407,12 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
   }
 
   void onDragUpdate(DragUpdateDetails details) {
+    if (_applicationDrag) {
+      _reportApplicationDrag(
+          details.localPosition, TerminalMouseButtonState.down,
+          motion: true);
+      return;
+    }
     if (!widget.enabled || _lastDragLocalPosition == null) return;
     _lastDragLocalPosition = details.localPosition;
     // Anchor the selection to the buffer cell captured at drag start rather than
@@ -372,11 +425,13 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
   }
 
   void onDragEnd(DragEndDetails details) {
+    _endApplicationDrag();
     _stopSelectionAutoScroll();
     _hostLeftGesture = false;
   }
 
   void onDragCancel() {
+    _endApplicationDrag();
     _stopSelectionAutoScroll();
     _pendingLeftTap = null;
     _hostLeftGesture = false;
@@ -414,7 +469,8 @@ class _TerminalGestureHandlerState extends State<TerminalGestureHandler> {
   bool get _ownsHeldDrag =>
       _lastDragLocalPosition != null &&
       identical(_dragBuffer, terminalView.widget.terminal.buffer) &&
-      _dragSelectionRevision == widget.terminalController.selectionClearRevision;
+      _dragSelectionRevision ==
+          widget.terminalController.selectionClearRevision;
 
   void _tickSelectionAutoScroll() {
     if (!widget.enabled) {

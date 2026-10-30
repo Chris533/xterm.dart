@@ -125,6 +125,10 @@ class TerminalController with ChangeNotifier {
     final buffer = _selectionOwner;
     if (buffer != null && _selectedText != null && !_sameRows(buffer, range)) {
       if (buffer.getText(range) != _selectedText) {
+        assert(() {
+          debugPrint('Terminal selection hidden: selected cells replaced by redraw');
+          return true;
+        }());
         _selectionHidden = true;
         _selectedRows = [];
         return null;

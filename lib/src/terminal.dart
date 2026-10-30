@@ -336,17 +336,16 @@ class Terminal with Observable implements TerminalState, EscapeHandler {
   }
 
   // Handle a mouse event and return true if it was handled.
-  bool mouseInput(
-    TerminalMouseButton button,
-    TerminalMouseButtonState buttonState,
-    CellOffset position,
-  ) {
+  bool mouseInput(TerminalMouseButton button,
+      TerminalMouseButtonState buttonState, CellOffset position,
+      {bool isMotion = false}) {
     final output = mouseHandler?.call(TerminalMouseEvent(
       button: button,
       buttonState: buttonState,
       position: position,
       state: this,
       platform: platform,
+      isMotion: isMotion,
     ));
     if (output != null) {
       onOutput?.call(output);
