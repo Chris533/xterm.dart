@@ -297,6 +297,8 @@ class TerminalViewState extends State<TerminalView> {
       key: _applicationScrollKey,
       terminal: widget.terminal,
       simulateScroll: widget.simulateScroll,
+      canSendApplicationInput: () => widget.renderingEnabled &&
+          !widget.readOnly && !_controller.suspendedPointerInputs,
       interceptApplicationScroll: widget.interceptApplicationScroll,
       onApplicationScroll: () {
         widget.onBeforeApplicationScroll?.call();

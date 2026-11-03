@@ -15,6 +15,7 @@ class TerminalScrollGestureHandler extends StatefulWidget {
     this.simulateScroll = true,
     this.onApplicationScroll,
     this.interceptApplicationScroll,
+    this.canSendApplicationInput,
     required this.child,
   });
 
@@ -38,6 +39,10 @@ class TerminalScrollGestureHandler extends StatefulWidget {
   /// local only: consume its offset, never replay it on a later scroll.
   final bool Function()? interceptApplicationScroll;
 
+  /// Read live view ownership before each report, not only at widget build.
+  /// Refused offsets are consumed locally and never replayed on reactivation.
+  final bool Function()? canSendApplicationInput;
+
   final Widget child;
 
   @override
@@ -59,10 +64,13 @@ class TerminalScrollGestureHandlerState
   /// Used to calculate the cell offset of the terminal mouse event.
   var lastPointerPosition = Offset.zero;
 
+  bool get _canSend => widget.terminal.isUsingAltBuffer &&
+      (widget.canSendApplicationInput?.call() ?? true);
+
   /// Explicit held-selection edge scrolling uses the same application modes
   /// and interception as wheel input, without changing the wheel baseline.
   bool scrollSelection({required bool up, required Offset position}) {
-    if (!widget.terminal.isUsingAltBuffer ||
+    if (!_canSend ||
         !(widget.terminal.mouseMode.reportScroll ||
             (widget.simulateScroll &&
                 widget.terminal.altBufferMouseScrollMode)) ||
@@ -116,6 +124,7 @@ class TerminalScrollGestureHandlerState
   /// mouse tracking (1000/1002/1003). Emit up/down keys only when mouse
   /// reporting is not requested and DECSET 1007 is enabled.
   void _sendScrollEvent(bool up) {
+    if (!_canSend) return;
     final position = widget.getCellOffset(lastPointerPosition);
     final reportMouseScroll = widget.terminal.mouseMode.reportScroll;
 
@@ -141,6 +150,11 @@ class TerminalScrollGestureHandlerState
     final currentLineOffset = offset ~/ widget.getLineHeight();
 
     final delta = currentLineOffset - lastLineOffset;
+
+    if (!_canSend) {
+      lastLineOffset = currentLineOffset;
+      return;
+    }
 
     if (delta != 0 &&
         (widget.terminal.mouseMode.reportScroll ||
