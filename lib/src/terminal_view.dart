@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -32,6 +33,7 @@ class TerminalView extends StatefulWidget {
     this.padding,
     this.scrollController,
     this.autoResize = true,
+    this.viewportResizeEpoch,
     this.backgroundOpacity = 1,
     this.focusNode,
     this.autofocus = false,
@@ -79,6 +81,10 @@ class TerminalView extends StatefulWidget {
   /// Should this widget automatically notify the underlying terminal when its
   /// size changes. [true] by default.
   final bool autoResize;
+
+  /// A non-null epoch permits one grid size change until the epoch advances.
+  /// A null value restores immediate resizing.
+  final ValueListenable<int?>? viewportResizeEpoch;
 
   /// Opacity of the terminal background. Set to 0 to make the terminal
   /// background transparent.
@@ -280,6 +286,7 @@ class TerminalViewState extends State<TerminalView> {
           offset: offset,
           padding: MediaQuery.of(context).padding,
           autoResize: widget.autoResize,
+          viewportResizeEpoch: widget.viewportResizeEpoch,
           textStyle: widget.textStyle,
           textScaler: widget.textScaler ?? MediaQuery.textScalerOf(context),
           theme: widget.theme,
@@ -553,6 +560,7 @@ class _TerminalView extends LeafRenderObjectWidget {
     required this.offset,
     required this.padding,
     required this.autoResize,
+    this.viewportResizeEpoch,
     required this.textStyle,
     required this.textScaler,
     required this.theme,
@@ -573,6 +581,7 @@ class _TerminalView extends LeafRenderObjectWidget {
   final EdgeInsets padding;
 
   final bool autoResize;
+  final ValueListenable<int?>? viewportResizeEpoch;
 
   final TerminalStyle textStyle;
 
@@ -600,6 +609,7 @@ class _TerminalView extends LeafRenderObjectWidget {
       offset: offset,
       padding: padding,
       autoResize: autoResize,
+      viewportResizeEpoch: viewportResizeEpoch,
       textStyle: textStyle,
       textScaler: textScaler,
       theme: theme,
@@ -620,6 +630,7 @@ class _TerminalView extends LeafRenderObjectWidget {
       ..offset = offset
       ..padding = padding
       ..autoResize = autoResize
+      ..viewportResizeEpoch = viewportResizeEpoch
       ..textStyle = textStyle
       ..textScaler = textScaler
       ..theme = theme

@@ -2,6 +2,7 @@ import 'dart:collection' show LinkedHashMap;
 import 'dart:math' show max;
 import 'dart:ui';
 
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 import 'package:xterm/src/core/buffer/cell_offset.dart';
@@ -33,6 +34,7 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
     required ViewportOffset offset,
     required EdgeInsets padding,
     required bool autoResize,
+    ValueListenable<int?>? viewportResizeEpoch,
     required TerminalStyle textStyle,
     required TextScaler textScaler,
     required TerminalTheme theme,
@@ -47,6 +49,7 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
         _offset = offset,
         _padding = padding,
         _autoResize = autoResize,
+        _viewportResizeEpoch = viewportResizeEpoch,
         _focusNode = focusNode,
         _cursorType = cursorType,
         _alwaysShowCursor = alwaysShowCursor,
@@ -184,6 +187,22 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
   }
 
   TerminalSize? _viewportSize;
+  ValueListenable<int?>? _viewportResizeEpoch;
+  int? _lastResizeEpoch;
+  bool _viewportResizeDeferred = false;
+
+  set viewportResizeEpoch(ValueListenable<int?>? value) {
+    if (identical(value, _viewportResizeEpoch)) return;
+    if (attached) _viewportResizeEpoch?.removeListener(_onResizeEpochChanged);
+    _viewportResizeEpoch = value;
+    _lastResizeEpoch = null;
+    if (attached) _viewportResizeEpoch?.addListener(_onResizeEpochChanged);
+    _onResizeEpochChanged();
+  }
+
+  void _onResizeEpochChanged() {
+    if (_renderingEnabled && _viewportResizeDeferred) markNeedsLayout();
+  }
 
   final TerminalPainter _painter;
 
@@ -235,6 +254,7 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
     _terminal.addListener(_onTerminalChange);
     _controller.addListener(_onControllerUpdate);
     _focusNode.addListener(_onFocusChange);
+    _viewportResizeEpoch?.addListener(_onResizeEpochChanged);
   }
 
   @override
@@ -245,6 +265,7 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
     _terminal.removeListener(_onTerminalChange);
     _controller.removeListener(_onControllerUpdate);
     _focusNode.removeListener(_onFocusChange);
+    _viewportResizeEpoch?.removeListener(_onResizeEpochChanged);
   }
 
   @override
@@ -435,10 +456,19 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
       _viewportHeight ~/ _painter.cellSize.height,
     );
 
-    if (_viewportSize != viewportSize) {
-      _viewportSize = viewportSize;
-      _resizeTerminalIfNeeded();
+    if (_viewportSize == viewportSize) {
+      _viewportResizeDeferred = false;
+      return;
     }
+    final epoch = _viewportResizeEpoch?.value;
+    if (epoch != null && epoch == _lastResizeEpoch) {
+      _viewportResizeDeferred = true;
+      return;
+    }
+    _viewportResizeDeferred = false;
+    _lastResizeEpoch = epoch;
+    _viewportSize = viewportSize;
+    _resizeTerminalIfNeeded();
   }
 
   /// Notify the underlying terminal that the viewport size has changed.
