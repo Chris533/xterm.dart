@@ -66,7 +66,11 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
     _terminal = terminal;
     if (attached) _terminal.addListener(_onTerminalChange);
     _clearLinePictures();
-    _resizeTerminalIfNeeded();
+    if (_renderingEnabled) {
+      _resizeTerminalIfNeeded();
+    } else {
+      _viewportSize = null;
+    }
     markNeedsLayout();
   }
 
@@ -420,7 +424,9 @@ class RenderTerminal extends RenderBox with RelayoutWhenSystemFontsChangeMixin {
   /// Update the viewport size in cells based on the current widget size in
   /// pixels.
   void _updateViewportSize() {
-    if (size <= _painter.cellSize) {
+    // Offstage slots can still be laid out with placeholder constraints.
+    // Only a visible renderer owns the terminal grid size.
+    if (!_renderingEnabled || size <= _painter.cellSize) {
       return;
     }
 
